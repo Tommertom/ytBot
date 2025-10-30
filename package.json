@@ -21,7 +21,7 @@
     "doPublish": "npm run build && npm version patch && npm publish --access public",
     "pm2:start": "npm run build && pm2 start ecosystem.config.cjs",
     "pm2:stop": "pm2 stop ytBOT",
-    "pm2:restart": "npm run build && pm2 restart ytBOT",
+    "pm2:restart": "npm run build && pm2 startOrRestart ecosystem.config.cjs",
     "pm2:delete": "pm2 delete ytBOT",
     "pm2:logs": "pm2 logs ytBOT",
     "pm2:monit": "pm2 monit",

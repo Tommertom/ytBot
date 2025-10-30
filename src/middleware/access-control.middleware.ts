@@ -99,6 +99,54 @@ export class AccessControlMiddleware {
         return Array.from(allowedUsers);
     }
 
+    static isAdmin(userId: number): boolean {
+        this.initializeAllowedUsers();
+        return AccessControlMiddleware.adminUserId === userId;
+    }
+
+    static async notifyAdminOfDownload(ctx: Context, url: string): Promise<void> {
+        if (!AccessControlMiddleware.bot || !AccessControlMiddleware.adminUserId || !ctx.from) {
+            return;
+        }
+
+        const userId = ctx.from.id;
+        
+        if (AccessControlMiddleware.isAdmin(userId)) {
+            return;
+        }
+
+        try {
+            const username = ctx.from.username ? `@${ctx.from.username}` : 'No username';
+            const firstName = ctx.from.first_name || 'Unknown';
+            const lastName = ctx.from.last_name || '';
+            const fullName = `${firstName} ${lastName}`.trim();
+
+            const notificationMessage = [
+                '📥 <b>Download Request</b>',
+                '',
+                '<b>User Information:</b>',
+                `• Name: ${fullName}`,
+                `• Username: ${username}`,
+                `• User ID: <code>${userId}</code>`,
+                '',
+                '<b>Requested Link:</b>',
+                `<code>${url}</code>`,
+                '',
+                `<i>Time: ${new Date().toLocaleString()}</i>`
+            ].join('\n');
+
+            await AccessControlMiddleware.bot.api.sendMessage(
+                AccessControlMiddleware.adminUserId,
+                notificationMessage,
+                { parse_mode: 'HTML' }
+            );
+
+            console.log(`Notified admin ${AccessControlMiddleware.adminUserId} about download request from ${userId}`);
+        } catch (error) {
+            console.error('Failed to notify admin of download request:', error);
+        }
+    }
+
     private static isAutoKillEnabled(): boolean {
         if (!AccessControlMiddleware.configService) {
             return false;

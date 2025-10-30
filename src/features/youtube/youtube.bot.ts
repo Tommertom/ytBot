@@ -77,6 +77,9 @@ export class YouTubeBot {
 
             // Process each YouTube URL found in the message
             for (const url of youtubeUrls) {
+                // Notify admin if non-admin user is downloading
+                await AccessControlMiddleware.notifyAdminOfDownload(ctx, url);
+                
                 // Get video info first
                 const videoInfo = await this.youtubeService.getVideoInfo(url);
 

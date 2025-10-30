@@ -63,26 +63,26 @@ export class YouTubeService {
      */
     async downloadVideo(url: string, options: DownloadOptions): Promise<DownloadResult> {
         try {
-            // First try with the specified quality (or best)
-            let result = await this.attemptDownload(url, options, this.defaultQuality);
+            // First try with best audio quality
+            let result = await this.attemptDownload(url, options, '0');
 
             if (!result.success && result.error?.includes('too large')) {
-                console.log('File too large, trying lower quality...');
+                console.log('File too large, trying lower audio quality (192kbps)...');
 
-                // Try with 720p
-                result = await this.attemptDownload(url, options, 'best[height<=720]');
+                // Try with 192kbps
+                result = await this.attemptDownload(url, options, '192K');
 
                 if (!result.success && result.error?.includes('too large')) {
-                    console.log('Still too large, trying 480p...');
+                    console.log('Still too large, trying 128kbps...');
 
-                    // Try with 480p
-                    result = await this.attemptDownload(url, options, 'best[height<=480]');
+                    // Try with 128kbps
+                    result = await this.attemptDownload(url, options, '128K');
 
                     if (!result.success && result.error?.includes('too large')) {
-                        console.log('Still too large, trying 360p...');
+                        console.log('Still too large, trying 96kbps...');
 
-                        // Try with 360p
-                        result = await this.attemptDownload(url, options, 'best[height<=360]');
+                        // Try with 96kbps (lowest acceptable quality)
+                        result = await this.attemptDownload(url, options, '96K');
                     }
                 }
             }
@@ -99,14 +99,14 @@ export class YouTubeService {
     /**
      * Attempt to download with specific quality
      */
-    private async attemptDownload(url: string, options: DownloadOptions, quality: string): Promise<DownloadResult> {
+    private async attemptDownload(url: string, options: DownloadOptions, audioBitrate: string): Promise<DownloadResult> {
         const outputTemplate = path.join(options.outputPath, '%(title)s.%(ext)s');
         const downloadStartTime = Date.now();
 
         const args = [
             '-x', // Extract audio
             '--audio-format', 'mp3', // Convert to MP3
-            '--audio-quality', '0', // Best audio quality
+            '--audio-quality', audioBitrate, // Audio quality/bitrate
             '--no-playlist',
             '--output', outputTemplate,
             '--max-filesize', `${this.maxFileSize}M`,
