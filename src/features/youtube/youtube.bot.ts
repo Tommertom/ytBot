@@ -38,12 +38,7 @@ export class YouTubeBot {
                 '/start - Show this help message',
                 '/help - Show this help message',
                 '',
-                'Just send me a message containing a YouTube URL, and I\'ll download the audio as MP3 for you! �',
-                '',
-                'Supported formats:',
-                '• youtube.com/watch?v=...',
-                '• youtu.be/...',
-                '• youtube.com/shorts/...'
+                'Just send me a message containing a YouTube URL, and I\'ll download the audio as MP3 for you! �'
             ].join('\n');
 
             await ctx.reply(helpMessage, { parse_mode: 'HTML' });
@@ -101,6 +96,9 @@ export class YouTubeBot {
                     });
 
                     if (downloadResult.success && downloadResult.filePath) {
+                        const fileSizeMB = ((downloadResult.fileSize || 0) / 1024 / 1024).toFixed(2);
+                        console.log(`[YouTubeBot] Successfully downloaded: ${downloadResult.fileName} (${fileSizeMB} MB)`);
+                        
                         // Send the audio file using InputFile
                         await ctx.replyWithAudio(new InputFile(downloadResult.filePath), {
                             caption: `✅ ${videoInfo.title}`,
@@ -118,11 +116,23 @@ export class YouTubeBot {
                         // Clean up the downloaded file
                         try {
                             fs.unlinkSync(downloadResult.filePath);
+                            console.log(`[YouTubeBot] Cleaned up file: ${downloadResult.filePath}`);
                         } catch (error) {
                             console.error('Error cleaning up file:', error);
                         }
                     } else {
-                        await ctx.reply(`❌ Failed to download the audio.\n\nError: ${downloadResult.error || 'Unknown error'}`);
+                        const errorMsg = downloadResult.error || 'Unknown error';
+                        console.error(`[YouTubeBot] Download failed: ${errorMsg}`);
+                        
+                        let userMessage = '❌ Failed to download the audio.';
+                        
+                        if (errorMsg.includes('File too large')) {
+                            userMessage += '\n\n⚠️ The file exceeds the maximum size limit (50 MB). Please try a shorter video.';
+                        } else {
+                            userMessage += `\n\nError: ${errorMsg}`;
+                        }
+                        
+                        await ctx.reply(userMessage);
 
                         // Delete the download message after failure
                         try {

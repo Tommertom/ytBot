@@ -19,8 +19,3 @@ ADMIN_USER_ID=
 # Time to wait before automatically deleting confirmation messages
 # Set to 0 to disable auto-deletion of messages
 MESSAGE_DELETE_TIMEOUT=10000
-
-#
-# CUSTOM ENV - not specific to ytBOT
-# Place here your custom environment variables if needed
-#
