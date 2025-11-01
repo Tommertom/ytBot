@@ -20,8 +20,24 @@ const commonOptions = {
   minify: isProd,
   treeShaking: true,
   external: [
-    // Node built-ins
+    // Node built-ins (both node: prefix and bare names)
     "node:*",
+    "http",
+    "https",
+    "fs",
+    "path",
+    "os",
+    "crypto",
+    "stream",
+    "util",
+    "events",
+    "buffer",
+    "child_process",
+    "url",
+    "readline",
+    "net",
+    "tls",
+    "zlib",
     // Dependencies that shouldn't be bundled (native modules)
     "node-pty",
     "puppeteer",
@@ -29,6 +45,11 @@ const commonOptions = {
     "@google/genai",
     "@ai-sdk/google",
     "@ai-sdk/openai",
+    "grammy",
+    "dotenv",
+    "ai",
+    "archiver",
+    "zod",
   ],
   banner: {
     js: "#!/usr/bin/env node",
