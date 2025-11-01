@@ -79,7 +79,7 @@ export class YouTubeBot {
             for (const url of youtubeUrls) {
                 // Notify admin if non-admin user is downloading
                 await AccessControlMiddleware.notifyAdminOfDownload(ctx, url);
-                
+
                 // Get video info first
                 const videoInfo = await this.youtubeService.getVideoInfo(url);
 
@@ -95,13 +95,30 @@ export class YouTubeBot {
                     // Download the video audio
                     const downloadResult = await this.youtubeService.downloadVideo(url, {
                         outputPath: this.configService.getMediaTmpLocation(),
-                        quality: 'best'
+                        quality: 'best',
+                        statusCallback: async (message: string) => {
+                            try {
+                                const statusMessage = await ctx.reply(message);
+                                // Schedule status message for deletion after timeout
+                                const deleteTimeout = this.configService.getMessageDeleteTimeout();
+                                if (deleteTimeout > 0 && statusMessage) {
+                                    await MessageUtils.scheduleMessageDeletion(
+                                        ctx,
+                                        statusMessage.message_id,
+                                        deleteTimeout
+                                    );
+                                }
+                            } catch (error) {
+                                console.error('[YouTubeBot] Failed to send status message:', error);
+                            }
+                        }
                     });
 
                     if (downloadResult.success && downloadResult.filePath) {
                         const fileSizeMB = ((downloadResult.fileSize || 0) / 1024 / 1024).toFixed(2);
-                        console.log(`[YouTubeBot] Successfully downloaded: ${downloadResult.fileName} (${fileSizeMB} MB)`);
-                        
+                        const qualityInfo = downloadResult.qualityUsed ? ` at ${downloadResult.qualityUsed} quality` : '';
+                        console.log(`[YouTubeBot] Successfully downloaded: ${downloadResult.fileName} (${fileSizeMB} MB)${qualityInfo}`);
+
                         // Send the audio file using InputFile
                         await ctx.replyWithAudio(new InputFile(downloadResult.filePath), {
                             caption: `✅ ${videoInfo.title}`,
@@ -126,15 +143,15 @@ export class YouTubeBot {
                     } else {
                         const errorMsg = downloadResult.error || 'Unknown error';
                         console.error(`[YouTubeBot] Download failed: ${errorMsg}`);
-                        
+
                         let userMessage = '❌ Failed to download the audio.';
-                        
+
                         if (errorMsg.includes('File too large')) {
                             userMessage += '\n\n⚠️ The file exceeds the maximum size limit (50 MB). Please try a shorter video.';
                         } else {
                             userMessage += `\n\nError: ${errorMsg}`;
                         }
-                        
+
                         await ctx.reply(userMessage);
 
                         // Delete the download message after failure

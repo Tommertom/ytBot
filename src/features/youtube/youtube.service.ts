@@ -59,32 +59,79 @@ export class YouTubeService {
     }
 
     /**
+     * Calculate optimal bitrate based on file size ratio
+     */
+    private calculateNextBitrate(currentBitrate: number, actualSizeMB: number, targetSizeMB: number): number {
+        // Calculate the ratio and apply a safety margin (0.95 to stay well under the limit)
+        const ratio = (targetSizeMB / actualSizeMB) * 0.95;
+        const calculatedBitrate = Math.floor(currentBitrate * ratio);
+
+        // Ensure we don't go below 48kbps (minimum acceptable quality)
+        const minBitrate = 48;
+        const nextBitrate = Math.max(calculatedBitrate, minBitrate);
+
+        console.log(`[YouTubeService] Bitrate calculation: ${currentBitrate}K @ ${actualSizeMB.toFixed(2)}MB → ${nextBitrate}K (target: ${targetSizeMB}MB, ratio: ${ratio.toFixed(3)})`);
+
+        return nextBitrate;
+    }
+
+    /**
      * Download YouTube video with automatic quality fallback
      */
     async downloadVideo(url: string, options: DownloadOptions): Promise<DownloadResult> {
         try {
+            const statusCallback = options.statusCallback;
+            const predefinedQualities = [192, 128, 96, 64, 48]; // Fallback qualities in kbps
+            let attemptCount = 0;
+            const maxAttempts = 6; // Prevent infinite loops
+
             // First try with best audio quality
             let result = await this.attemptDownload(url, options, '0');
+            attemptCount++;
 
-            if (!result.success && result.error?.includes('too large')) {
-                console.log('File too large, trying lower audio quality (192kbps)...');
+            // Smart quality fallback with calculated bitrates
+            while (!result.success && result.error?.includes('too large') && attemptCount < maxAttempts) {
+                let nextBitrate: number;
 
-                // Try with 192kbps
-                result = await this.attemptDownload(url, options, '192K');
+                if (result.fileSize && attemptCount === 1) {
+                    // We have size info from the first "best quality" attempt
+                    // Calculate optimal bitrate based on actual file size
+                    const actualSizeMB = result.fileSize / (1024 * 1024);
 
-                if (!result.success && result.error?.includes('too large')) {
-                    console.log('Still too large, trying 128kbps...');
+                    // Estimate the bitrate used (assume best quality is around 256kbps for calculation)
+                    const estimatedCurrentBitrate = 256;
+                    nextBitrate = this.calculateNextBitrate(estimatedCurrentBitrate, actualSizeMB, this.maxFileSize);
 
-                    // Try with 128kbps
-                    result = await this.attemptDownload(url, options, '128K');
+                    const msg = `⚠️ File too large (${actualSizeMB.toFixed(1)}MB). Calculated optimal bitrate: ${nextBitrate}kbps...`;
+                    console.log(msg);
+                    if (statusCallback) statusCallback(msg);
+                } else if (result.fileSize && result.currentBitrate) {
+                    // We have size and bitrate from previous attempt
+                    const actualSizeMB = result.fileSize / (1024 * 1024);
+                    nextBitrate = this.calculateNextBitrate(result.currentBitrate, actualSizeMB, this.maxFileSize);
 
-                    if (!result.success && result.error?.includes('too large')) {
-                        console.log('Still too large, trying 96kbps...');
+                    const msg = `⚠️ Still too large (${actualSizeMB.toFixed(1)}MB). Trying ${nextBitrate}kbps...`;
+                    console.log(msg);
+                    if (statusCallback) statusCallback(msg);
+                } else {
+                    // Fallback to predefined qualities if we don't have size info
+                    nextBitrate = predefinedQualities[Math.min(attemptCount - 1, predefinedQualities.length - 1)];
 
-                        // Try with 96kbps (lowest acceptable quality)
-                        result = await this.attemptDownload(url, options, '96K');
-                    }
+                    const msg = `⚠️ File too large. Trying ${nextBitrate}kbps...`;
+                    console.log(msg);
+                    if (statusCallback) statusCallback(msg);
                 }
+
+                // Attempt download with calculated bitrate
+                result = await this.attemptDownload(url, options, `${nextBitrate}K`);
+                attemptCount++;
+            }
+
+            // If still too large after all attempts
+            if (!result.success && result.error?.includes('too large')) {
+                const msg = '❌ Unable to reduce file size below 50MB even at lowest quality. Please try a shorter video.';
+                console.log(msg);
+                if (statusCallback) statusCallback(msg);
             }
 
             return result;
@@ -109,7 +156,7 @@ export class YouTubeService {
             '--audio-quality', audioBitrate, // Audio quality/bitrate
             '--no-playlist',
             '--output', outputTemplate,
-            '--max-filesize', `${this.maxFileSize}M`,
+            // NOTE: Removed --max-filesize because it checks intermediate WebM size, not final MP3
             '--print', 'after_move:filepath', // Print final file path
             '--no-warnings',
             url
@@ -117,7 +164,7 @@ export class YouTubeService {
 
         try {
             const output = await this.executeYtDlp(args);
-            
+
             // Try to extract filename from yt-dlp output
             let detectedFilePath: string | null = null;
             const lines = output.trim().split('\n');
@@ -134,9 +181,12 @@ export class YouTubeService {
             if (detectedFilePath && fs.existsSync(detectedFilePath)) {
                 const stats = fs.statSync(detectedFilePath);
                 const fileSizeMB = stats.size / (1024 * 1024);
-                
+
+                // Parse bitrate to number (remove 'K' suffix if present)
+                const bitrateNum = audioBitrate === '0' ? 0 : parseInt(audioBitrate.replace('K', ''));
+
                 console.log(`[YouTubeService] File size: ${fileSizeMB.toFixed(2)} MB`);
-                
+
                 // Validate final file size
                 if (fileSizeMB > this.maxFileSize) {
                     console.log(`[YouTubeService] Final MP3 exceeds size limit (${fileSizeMB.toFixed(2)} MB > ${this.maxFileSize} MB)`);
@@ -148,7 +198,9 @@ export class YouTubeService {
                     }
                     return {
                         success: false,
-                        error: 'File too large'
+                        error: 'File too large',
+                        fileSize: stats.size,
+                        currentBitrate: bitrateNum
                     };
                 }
 
@@ -156,13 +208,15 @@ export class YouTubeService {
                     success: true,
                     filePath: detectedFilePath,
                     fileName: path.basename(detectedFilePath),
-                    fileSize: stats.size
+                    fileSize: stats.size,
+                    qualityUsed: audioBitrate,
+                    currentBitrate: bitrateNum
                 };
             }
 
             // Fallback: Find the downloaded file by scanning directory
             console.log(`[YouTubeService] Falling back to directory scan (detection window: ${this.fileDetectionWindow}ms)`);
-            
+
             const files = fs.readdirSync(options.outputPath)
                 .filter(f => {
                     const filePath = path.join(options.outputPath, f);
@@ -170,9 +224,9 @@ export class YouTubeService {
                     const fileAge = Date.now() - stat.mtimeMs;
                     const isRecent = fileAge < this.fileDetectionWindow;
                     const isMp3 = f.endsWith('.mp3');
-                    
+
                     console.log(`[YouTubeService] Scanning file: ${f}, Age: ${fileAge}ms, Recent: ${isRecent}, MP3: ${isMp3}`);
-                    
+
                     return stat.isFile() && isMp3 && isRecent;
                 })
                 .sort((a, b) => {
@@ -187,9 +241,12 @@ export class YouTubeService {
                 const filePath = path.join(options.outputPath, files[0]);
                 const stats = fs.statSync(filePath);
                 const fileSizeMB = stats.size / (1024 * 1024);
-                
+
+                // Parse bitrate to number (remove 'K' suffix if present)
+                const bitrateNum = audioBitrate === '0' ? 0 : parseInt(audioBitrate.replace('K', ''));
+
                 console.log(`[YouTubeService] Selected file: ${files[0]}, Size: ${fileSizeMB.toFixed(2)} MB`);
-                
+
                 // Validate final file size
                 if (fileSizeMB > this.maxFileSize) {
                     console.log(`[YouTubeService] Final MP3 exceeds size limit (${fileSizeMB.toFixed(2)} MB > ${this.maxFileSize} MB)`);
@@ -201,7 +258,9 @@ export class YouTubeService {
                     }
                     return {
                         success: false,
-                        error: 'File too large'
+                        error: 'File too large',
+                        fileSize: stats.size,
+                        currentBitrate: bitrateNum
                     };
                 }
 
@@ -209,13 +268,15 @@ export class YouTubeService {
                     success: true,
                     filePath,
                     fileName: files[0],
-                    fileSize: stats.size
+                    fileSize: stats.size,
+                    qualityUsed: audioBitrate,
+                    currentBitrate: bitrateNum
                 };
             }
 
             const downloadDuration = Date.now() - downloadStartTime;
             console.error(`[YouTubeService] No files found. Download duration: ${downloadDuration}ms, Detection window: ${this.fileDetectionWindow}ms`);
-            
+
             return {
                 success: false,
                 error: 'Downloaded file not found'

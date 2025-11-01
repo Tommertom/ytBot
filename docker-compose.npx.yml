@@ -1,0 +1,65 @@
+version: "3.8"
+
+services:
+  ytbot:
+    build:
+      context: .
+      dockerfile: Dockerfile.npx
+    container_name: ytbot-instance
+    
+    # Mount .env file and logs directory
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./logs:/app/logs
+      - ytbot-media:/tmp/coderBOT_media
+      
+      # Optional: Persist terminal history
+      - terminal_history:/home/node
+      
+      # Optional: Mount a working directory for file operations
+      - bot_workspace:/workspace
+      
+      # Optional: Persist GitHub CLI authentication (for Copilot CLI)
+      - gh_config:/home/node/.config/gh
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Enable TTY for terminal sessions
+    tty: true
+    stdin_open: true
+    
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    
+    # Network configuration
+    network_mode: "bridge"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  ytbot-media:
+    driver: local
+  terminal_history:
+    driver: local
+  bot_workspace:
+    driver: local
+  gh_config:
+    driver: local

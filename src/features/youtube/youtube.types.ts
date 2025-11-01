@@ -1,6 +1,7 @@
 export interface DownloadOptions {
     quality?: string;
     outputPath: string;
+    statusCallback?: (message: string) => void;
 }
 
 export interface DownloadResult {
@@ -9,6 +10,8 @@ export interface DownloadResult {
     fileName?: string;
     error?: string;
     fileSize?: number;
+    qualityUsed?: string;
+    currentBitrate?: number; // Bitrate in kbps for calculating next attempt
 }
 
 export interface VideoInfo {
