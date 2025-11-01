@@ -11,11 +11,17 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
     ffmpeg \
+    atomicparsley \
     && rm -rf /var/lib/apt/lists/*
 
 # Install yt-dlp using pip with virtual environment to avoid externally-managed-environment error
+# Also install optional Python packages for better yt-dlp functionality
 RUN python3 -m venv /opt/venv && \
-    /opt/venv/bin/pip install --no-cache-dir yt-dlp && \
+    /opt/venv/bin/pip install --no-cache-dir \
+        yt-dlp \
+        brotli \
+        certifi \
+        mutagen && \
     ln -s /opt/venv/bin/yt-dlp /usr/local/bin/yt-dlp
 
 # Create app directory and set ownership
