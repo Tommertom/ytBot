@@ -9,6 +9,8 @@
   "files": [
     "dist/**/*",
     "dot-env.template",
+    "Dockerfile",
+    "docker-compose.yml",
     "README.md",
     "LICENSE"
   ],
