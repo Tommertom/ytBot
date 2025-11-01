@@ -1,3 +1,47 @@
+# ytBOT - Quick Reference
+
+## 🚀 Quick Start
+
+### NPX (Quickest)
+```bash
+npx @tommertom/ytbot@latest
+```
+
+### Docker Setup
+```bash
+npx @tommertom/ytbot@latest --docker
+# Creates Dockerfile and docker-compose.yml
+# Then: docker-compose up -d
+```
+
+## 📝 CLI Flags
+
+| Flag | Description |
+|------|-------------|
+| (none) | Start the bot normally |
+| `--docker` | Generate Dockerfile and docker-compose.yml in current directory |
+
+## 🐳 Docker Flag Feature
+
+**Usage**: `npx @tommertom/ytbot@latest --docker`
+
+**What it does**:
+- Creates `Dockerfile` in current directory
+- Creates `docker-compose.yml` in current directory  
+- Prompts before overwriting existing files
+- Exits after file generation (does not start bot)
+
+**Example**:
+```bash
+$ npx @tommertom/ytbot@latest --docker
+✅ Created Dockerfile
+✅ Created docker-compose.yml
+
+Next: docker-compose up -d
+```
+
+---
+
 # YouTube Download Fix - Quick Reference
 
 ## 🚀 What Was Fixed
