@@ -30,7 +30,7 @@ function promptUser(question: string): Promise<boolean> {
 }
 
 /**
- * Handles Docker setup - writes Dockerfile and docker-compose.yml to current directory
+ * Handles Docker setup - writes Dockerfile, docker-compose.yml, and .env to current directory
  */
 async function handleDockerSetup(): Promise<void> {
     console.log('🐳 Docker Setup Mode\n');
@@ -38,12 +38,14 @@ async function handleDockerSetup(): Promise<void> {
     const currentDir = process.cwd();
     const dockerfilePath = join(currentDir, 'Dockerfile');
     const dockerComposePath = join(currentDir, 'docker-compose.yml');
+    const envPath = join(currentDir, '.env');
 
-    // Check if Dockerfile exists
+    // Check if files exist
     const dockerfileExists = fs.existsSync(dockerfilePath);
     const dockerComposeExists = fs.existsSync(dockerComposePath);
+    const envExists = fs.existsSync(envPath);
 
-    // Prompt if files exist
+    // Prompt if Dockerfile exists
     if (dockerfileExists) {
         const overwrite = await promptUser('⚠️  Dockerfile already exists. Overwrite? (y/N): ');
         if (!overwrite) {
@@ -55,6 +57,7 @@ async function handleDockerSetup(): Promise<void> {
         writeDockerfile(dockerfilePath);
     }
 
+    // Prompt if docker-compose.yml exists
     if (dockerComposeExists) {
         const overwrite = await promptUser('⚠️  docker-compose.yml already exists. Overwrite? (y/N): ');
         if (!overwrite) {
@@ -66,9 +69,21 @@ async function handleDockerSetup(): Promise<void> {
         writeDockerCompose(dockerComposePath);
     }
 
+    // Prompt if .env exists
+    if (envExists) {
+        const overwrite = await promptUser('⚠️  .env file already exists. Overwrite? (y/N): ');
+        if (!overwrite) {
+            console.log('❌ Skipping .env file creation.');
+        } else {
+            writeEnvFile(envPath);
+        }
+    } else {
+        writeEnvFile(envPath);
+    }
+
     console.log('\n✅ Docker setup complete!');
     console.log('\n📝 Next steps:');
-    console.log('   1. Create a .env file with your configuration');
+    console.log('   1. Edit the .env file with your Telegram bot token and user IDs');
     console.log('   2. Run: docker-compose up -d');
     console.log('   3. View logs: docker-compose logs -f\n');
 }
@@ -312,6 +327,37 @@ volumes:
 
     fs.writeFileSync(path, dockerComposeContent);
     console.log(`✅ Created docker-compose.yml at ${path}`);
+}
+
+/**
+ * Writes .env file to the specified path
+ */
+function writeEnvFile(path: string): void {
+    const envContent = `# Environment Variables
+
+# Your Telegram bot tokens from @BotFather, separated by commas
+# You can specify one or more tokens to run multiple bot instances
+# Example: TELEGRAM_BOT_TOKENS=1234567890:AABBCCDDEEFFGGHHIIJJKKLLMMNNOOPPQQrrss,9876543210:ZZYYXXWWVVUUTTSSRRQQPPOONNMMllkkjjii
+TELEGRAM_BOT_TOKENS=
+
+# Comma-separated list of Telegram user IDs allowed to use the bot
+# Example: ALLOWED_USER_IDS=123456789,987654321
+ALLOWED_USER_IDS=
+
+# Admin user ID who receives notifications about unauthorized access attempts
+# This user will be notified when someone not in ALLOWED_USER_IDS tries to use the bot
+# Example: ADMIN_USER_ID=123456789
+ADMIN_USER_ID=
+
+# Message Configuration
+# Message auto-delete timeout in milliseconds (default: 10000 = 10 seconds)
+# Time to wait before automatically deleting confirmation messages
+# Set to 0 to disable auto-deletion of messages
+MESSAGE_DELETE_TIMEOUT=10000
+`;
+
+    fs.writeFileSync(path, envContent);
+    console.log(`✅ Created .env file at ${path}`);
 }
 
 // Parse command-line arguments
