@@ -3,7 +3,7 @@
 import * as esbuild from "esbuild";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { copyFileSync, mkdirSync, existsSync } from "fs";
+import { copyFileSync, mkdirSync, existsSync, rmSync } from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -63,10 +63,14 @@ async function build() {
       `   Mode: ${isProd ? "production (minified)" : "development"}\n`
     );
 
-    // Ensure dist directory exists
-    if (!existsSync("dist")) {
-      mkdirSync("dist", { recursive: true });
+    // Clean dist directory
+    if (existsSync("dist")) {
+      rmSync("dist", { recursive: true, force: true });
+      console.log("🧹 Cleaned dist directory");
     }
+
+    // Create fresh dist directory
+    mkdirSync("dist", { recursive: true });
 
     // Build CLI entry point
     await esbuild.build({

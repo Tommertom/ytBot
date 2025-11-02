@@ -38,10 +38,20 @@ export class YouTubeBot {
                 '/start - Show this help message',
                 '/help - Show this help message',
                 '',
-                'Just send me a message containing a YouTube URL, and I\'ll download the audio as MP3 for you! �'
+                'Just send me a message containing a YouTube URL, and I\'ll download the audio as MP3 for you! 🎵'
             ].join('\n');
 
-            await ctx.reply(helpMessage, { parse_mode: 'HTML' });
+            const sentMessage = await ctx.reply(helpMessage, { parse_mode: 'HTML' });
+
+            // Schedule help message for deletion
+            const deleteTimeout = this.configService.getMessageDeleteTimeout();
+            if (deleteTimeout > 0 && sentMessage) {
+                await MessageUtils.scheduleMessageDeletion(
+                    ctx,
+                    sentMessage.message_id,
+                    deleteTimeout
+                );
+            }
         } catch (error) {
             await ctx.reply(ErrorUtils.createErrorMessage('show help message', error));
         }

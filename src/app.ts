@@ -80,6 +80,17 @@ async function startBot() {
             console.error('[ytBot] Failed to get bot info:', error);
         }
 
+        // Set bot commands for Telegram UI
+        try {
+            await bot.api.setMyCommands([
+                { command: 'start', description: 'Show help message' },
+                { command: 'help', description: 'Show help message' }
+            ]);
+            console.log('[ytBot] ✅ Bot commands registered');
+        } catch (error) {
+            console.error('[ytBot] Failed to set bot commands:', error);
+        }
+
         // Start the bot
         await bot.start();
         console.log('[ytBot] ✅ Bot started successfully');
