@@ -246,42 +246,6 @@ MESSAGE_DELETE_TIMEOUT=10000
 EOF
 ```
 
-**Create `docker-compose.yml`:**
-
-```yaml
-version: "3.8"
-
-services:
-  ytbot:
-    image: node:22-slim
-    container_name: ytbot
-    working_dir: /app
-    volumes:
-      - ./.env:/app/.env:ro
-      - ./downloads:/tmp/ytBOT_media
-    restart: unless-stopped
-    
-    command: >
-      bash -c "
-      apt-get update && 
-      apt-get install -y python3 python3-pip build-essential &&
-      pip3 install --break-system-packages yt-dlp &&
-      npm install -g @tommertom/ytbot@latest &&
-      cd /app &&
-      ytbot
-      "
-
-volumes:
-  ytbot_downloads:
-```
-
-**Start the bot:**
-
-```bash
-docker-compose up -d
-docker-compose logs -f
-```
-
 ## Configuration
 
 ytBot needs a few settings to work. These are stored in a `.env` file that's **created automatically on first run**.
