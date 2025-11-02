@@ -8,19 +8,50 @@ export class YouTubeService {
     private maxFileSize: number; // in MB
     private defaultQuality: string;
     private fileDetectionWindow: number; // in milliseconds
+    private static readonly MAX_URL_LENGTH = 2048;
 
     constructor(ytDlpPath: string = '/usr/local/bin/yt-dlp', maxFileSize: number = 50) {
         this.ytDlpPath = ytDlpPath;
         this.maxFileSize = maxFileSize;
         this.defaultQuality = 'best';
         this.fileDetectionWindow = 180000; // 3 minutes (increased from 60 seconds)
+        
+        this.verifyYtDlpPath();
+    }
+
+    /**
+     * Verify that ytDlpPath points to a valid yt-dlp executable
+     */
+    private verifyYtDlpPath(): void {
+        if (!fs.existsSync(this.ytDlpPath)) {
+            throw new Error(`yt-dlp not found at path: ${this.ytDlpPath}`);
+        }
+        
+        const stats = fs.statSync(this.ytDlpPath);
+        if (!stats.isFile()) {
+            throw new Error(`yt-dlp path is not a file: ${this.ytDlpPath}`);
+        }
     }
 
     /**
      * Check if a URL is a YouTube URL
+     * Security: Validates URL scheme and length
      */
     isYouTubeUrl(url: string): boolean {
-        const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)/i;
+        // Security fix #2: Validate URL length to prevent DoS
+        if (url.length > YouTubeService.MAX_URL_LENGTH) {
+            console.warn(`[YouTubeService] URL exceeds maximum length: ${url.length} > ${YouTubeService.MAX_URL_LENGTH}`);
+            return false;
+        }
+
+        // Security fix #1: Require http:// or https:// scheme (prevent file://, data://, etc.)
+        if (!/^https?:\/\//i.test(url)) {
+            console.warn(`[YouTubeService] URL missing or invalid scheme: ${url}`);
+            return false;
+        }
+
+        // Validate YouTube domain
+        const youtubeRegex = /^https?:\/\/(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)/i;
         return youtubeRegex.test(url);
     }
 
@@ -41,6 +72,7 @@ export class YouTubeService {
             const args = [
                 '--dump-json',
                 '--no-playlist',
+                '--', // Security: Argument separator
                 url
             ];
 
@@ -150,15 +182,16 @@ export class YouTubeService {
         const outputTemplate = path.join(options.outputPath, '%(title)s.%(ext)s');
         const downloadStartTime = Date.now();
 
+        // Security fix #1: Add '--' separator to prevent URL from being interpreted as argument
         const args = [
             '-x', // Extract audio
             '--audio-format', 'mp3', // Convert to MP3
             '--audio-quality', audioBitrate, // Audio quality/bitrate
             '--no-playlist',
             '--output', outputTemplate,
-            // NOTE: Removed --max-filesize because it checks intermediate WebM size, not final MP3
             '--print', 'after_move:filepath', // Print final file path
             '--no-warnings',
+            '--', // Argument separator - everything after this is treated as positional arguments
             url
         ];
 
@@ -171,6 +204,12 @@ export class YouTubeService {
             for (const line of lines) {
                 const trimmedLine = line.trim();
                 if (trimmedLine && fs.existsSync(trimmedLine) && trimmedLine.endsWith('.mp3')) {
+                    // Security fix #3: Validate output path to prevent path traversal
+                    if (!this.validateOutputPath(trimmedLine, options.outputPath)) {
+                        console.error(`[YouTubeService] SECURITY: Path traversal detected - ${trimmedLine}`);
+                        throw new Error('Path traversal detected in output file');
+                    }
+                    
                     detectedFilePath = trimmedLine;
                     console.log(`[YouTubeService] Detected file from yt-dlp output: ${detectedFilePath}`);
                     break;
@@ -239,6 +278,16 @@ export class YouTubeService {
 
             if (files.length > 0) {
                 const filePath = path.join(options.outputPath, files[0]);
+                
+                // Security fix #3: Validate output path to prevent path traversal
+                if (!this.validateOutputPath(filePath, options.outputPath)) {
+                    console.error(`[YouTubeService] SECURITY: Path traversal detected - ${filePath}`);
+                    return {
+                        success: false,
+                        error: 'Path traversal detected in output file'
+                    };
+                }
+                
                 const stats = fs.statSync(filePath);
                 const fileSizeMB = stats.size / (1024 * 1024);
 
@@ -299,6 +348,25 @@ export class YouTubeService {
                 error: errorMessage
             };
         }
+    }
+
+    /**
+     * Validate that a file path is within the expected output directory
+     * Security fix #3: Prevent path traversal attacks
+     */
+    private validateOutputPath(filePath: string, baseDir: string): boolean {
+        const resolvedPath = path.resolve(filePath);
+        const resolvedBase = path.resolve(baseDir);
+        
+        const isValid = resolvedPath.startsWith(resolvedBase);
+        
+        if (!isValid) {
+            console.error(`[YouTubeService] Path validation failed:`);
+            console.error(`  File path: ${resolvedPath}`);
+            console.error(`  Base dir:  ${resolvedBase}`);
+        }
+        
+        return isValid;
     }
 
     /**

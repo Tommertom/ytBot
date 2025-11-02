@@ -1,5 +1,6 @@
 import { Context, NextFunction, Bot } from 'grammy';
 import { ConfigService } from '../services/config.service.js';
+import { MessageUtils } from '../utils/message.utils.js';
 
 export class AccessControlMiddleware {
     private static allowedUserIds: Set<number> | null = null;
@@ -135,11 +136,28 @@ export class AccessControlMiddleware {
                 `<i>Time: ${new Date().toLocaleString()}</i>`
             ].join('\n');
 
-            await AccessControlMiddleware.bot.api.sendMessage(
+            const sentMessage = await AccessControlMiddleware.bot.api.sendMessage(
                 AccessControlMiddleware.adminUserId,
                 notificationMessage,
                 { parse_mode: 'HTML' }
             );
+
+            // Schedule message deletion using the configured timeout
+            if (AccessControlMiddleware.configService && sentMessage) {
+                const deleteTimeout = AccessControlMiddleware.configService.getMessageDeleteTimeout();
+                if (deleteTimeout > 0) {
+                    setTimeout(async () => {
+                        try {
+                            await AccessControlMiddleware.bot!.api.deleteMessage(
+                                AccessControlMiddleware.adminUserId!,
+                                sentMessage.message_id
+                            );
+                        } catch (error) {
+                            console.error('Failed to delete admin notification message:', error);
+                        }
+                    }, deleteTimeout);
+                }
+            }
 
             console.log(`Notified admin ${AccessControlMiddleware.adminUserId} about download request from ${userId}`);
         } catch (error) {
@@ -183,11 +201,28 @@ export class AccessControlMiddleware {
                 `<i>Time: ${new Date().toLocaleString()}</i>`
             ].join('\n');
 
-            await AccessControlMiddleware.bot.api.sendMessage(
+            const sentMessage = await AccessControlMiddleware.bot.api.sendMessage(
                 AccessControlMiddleware.adminUserId,
                 notificationMessage,
                 { parse_mode: 'HTML' }
             );
+
+            // Schedule message deletion using the configured timeout
+            if (AccessControlMiddleware.configService && sentMessage) {
+                const deleteTimeout = AccessControlMiddleware.configService.getMessageDeleteTimeout();
+                if (deleteTimeout > 0) {
+                    setTimeout(async () => {
+                        try {
+                            await AccessControlMiddleware.bot!.api.deleteMessage(
+                                AccessControlMiddleware.adminUserId!,
+                                sentMessage.message_id
+                            );
+                        } catch (error) {
+                            console.error('Failed to delete admin notification message:', error);
+                        }
+                    }, deleteTimeout);
+                }
+            }
 
             console.log(`Notified admin ${AccessControlMiddleware.adminUserId} about unauthorized access from ${userId}`);
         } catch (error) {
