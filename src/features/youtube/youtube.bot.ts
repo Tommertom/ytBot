@@ -131,7 +131,7 @@ export class YouTubeBot {
 
                         // Send the audio file using InputFile
                         await ctx.replyWithAudio(new InputFile(downloadResult.filePath), {
-                            caption: `✅ ${videoInfo.title}`,
+                            caption: `🎧 ${videoInfo.title}`,
                             title: videoInfo.title,
                             performer: 'YouTube'
                         });
