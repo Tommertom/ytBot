@@ -24,32 +24,77 @@ No complicated interfaces, no desktop apps, no third-party services - just send 
 Once your bot is running and configured:
 
 1. **Open Telegram** and find your bot
-2. **Send a YouTube URL** - Any valid YouTube link
-3. **Wait for download** - The bot will fetch and process the video
-4. **Receive your file** - Video is sent directly to your chat
+2. **Send a YouTube URL** - Any valid YouTube link or playlist
+3. **Wait for download** - The bot will fetch and process the video(s)
+4. **Receive your file(s)** - Audio files sent directly to your chat
 
-**Example:**
+### Demo
+
+See ytBot in action:
+
+<video width="200" controls>
+  <source src="./video_1767517737317.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
+**Single Video Example:**
 ```
 You: https://www.youtube.com/watch?v=dQw4w9WgXcQ
 
 Bot: 🎵 Downloading video...
-     Quality: 720p
-     Size: ~45MB
+     Quality: 192kbps
+     Size: ~8MB
      
-     [Video file sent]
+     [Audio file sent]
+```
+
+**Playlist Example:**
+```
+You: https://www.youtube.com/playlist?list=PLxxxxxx
+
+Bot: 📋 Playlist detected: My Awesome Playlist
+     📊 Total videos: 25
+     ⬇️ Will download: 25 videos
+     
+     ⏳ This may take a while. Processing sequentially...
+     
+     📥 [1/25] Video Title 1
+     ✅ [1/25] Downloaded: Video Title 1
+     [Audio file sent]
+     
+     📥 [2/25] Video Title 2
+     ✅ [2/25] Downloaded: Video Title 2
+     [Audio file sent]
+     
+     ... (continues for all videos)
+     
+     ✅ Playlist download complete!
+     📊 Summary:
+        ✅ Downloaded: 23
+        ❌ Failed: 2
+        📝 Total: 25
 ```
 
 ### Smart Quality Management
 
-If a video file is too large for Telegram (>50MB), ytBot automatically tries lower qualities:
-- Best available → 720p → 480p → 360p
+If a video file is too large for Telegram (>50MB), ytBot automatically tries lower bitrates:
+- Best available → 192kbps → 128kbps → 96kbps → 64kbps → 48kbps
 
-This ensures you always get the video, even if the original is too large.
+This ensures you always get the audio, even if the original is too large.
 
 **Supported YouTube URLs:**
 - Standard videos: `https://www.youtube.com/watch?v=...`
 - Short links: `https://youtu.be/...`
 - YouTube Shorts: `https://www.youtube.com/shorts/...`
+- **Playlists**: `https://www.youtube.com/playlist?list=...`
+- **Videos with playlist context**: `https://www.youtube.com/watch?v=...&list=...`
+
+**Playlist Features:**
+- ✅ Downloads up to **50 videos** per playlist (configurable)
+- ✅ **Sequential downloading** to prevent rate limiting
+- ✅ **Progress updates** for each video
+- ✅ **Error resilience** - failed videos don't stop the playlist
+- ✅ Summary statistics after completion
 
 
 ## ⚠️ Important Legal Notice
