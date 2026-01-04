@@ -30,7 +30,11 @@ Once your bot is running and configured:
 
 ### Demo
 
-📹 **[Watch Demo Video](./video_1767517737317.mp4)** - See ytBot in action!
+See ytBot in action:
+
+[![Watch Demo Video](https://img.youtube.com/vi/3lQDlkIo-os/0.jpg)](https://youtube.com/shorts/3lQDlkIo-os)
+
+*Click the image above to watch the demo video*
 
 **Single Video Example:**
 ```
