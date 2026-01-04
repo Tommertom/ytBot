@@ -30,12 +30,7 @@ Once your bot is running and configured:
 
 ### Demo
 
-See ytBot in action:
-
-<video width="200" controls>
-  <source src="./video_1767517737317.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+📹 **[Watch Demo Video](./video_1767517737317.mp4)** - See ytBot in action!
 
 **Single Video Example:**
 ```
