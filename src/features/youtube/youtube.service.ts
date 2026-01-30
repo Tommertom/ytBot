@@ -272,10 +272,10 @@ export class YouTubeService {
             '--audio-format', 'mp3', // Convert to MP3
             '--audio-quality', audioBitrate, // Audio quality/bitrate
             '--embed-metadata', // Embed metadata into the MP3
-            '--metadata', 'title:%(title)s', // Set ID3 title to video title
-            '--metadata', 'artist:%(title)s', // Set ID3 artist to video title
-            '--metadata', 'album:%(title)s', // Set ID3 album to video title (Sonos display)
-            '--metadata', 'album_artist:%(title)s', // Set ID3 album artist (Sonos display)
+            '--parse-metadata', 'title:%(meta_title)s', // Set ID3 title from video title
+            '--parse-metadata', 'title:%(meta_artist)s', // Set ID3 artist from video title
+            '--parse-metadata', 'title:%(meta_album)s', // Set ID3 album from video title (Sonos display)
+            '--parse-metadata', 'title:%(album_artist)s', // Set ID3 album artist from video title (Sonos display)
             '--embed-thumbnail', // Embed thumbnail as album art
             '--convert-thumbnails', 'jpg', // Ensure compatible thumbnail format
             '--no-playlist',

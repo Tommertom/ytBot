@@ -85,7 +85,10 @@ The bot was giving "Downloaded file not found" errors. Now it works reliably.
 
 ## 🎵 Sonos Metadata
 
-To improve title/cover display in Sonos, MP3s now include ID3 album and album artist tags in addition to title, artist, and embedded cover art.
+MP3s include proper ID3v2 tags for Sonos compatibility:
+- Title, Artist, Album, and Album Artist (all set to video title)
+- Embedded JPEG album art (from YouTube thumbnail)
+- Uses `--parse-metadata` for proper ID3 tag writing
 
 ## 🔧 How to Deploy
 

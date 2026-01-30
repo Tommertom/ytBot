@@ -81,7 +81,7 @@ export class YouTubeBot {
                 '🎵 Just send me a YouTube URL to get started!'
             ].join('\n');
 
-            const sentMessage = await ctx.reply(helpMessage, { parse_mode: 'HTML' });
+            const sentMessage = await ctx.reply(helpMessage);
 
             const deleteTimeout = this.configService.getMessageDeleteTimeout();
             if (deleteTimeout > 0 && sentMessage) {
