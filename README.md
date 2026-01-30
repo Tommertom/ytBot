@@ -18,6 +18,10 @@ No complicated interfaces, no desktop apps, no third-party services - just send 
 - ⚡ **Fast** - Direct delivery to your Telegram chat
 
 
+## Recent Fixes ✅
+
+- 2026-01-30 — Fixed `/start` and `/help`: help message no longer uses HTML parse mode to avoid Telegram errors when containing strings like `<youtube-url>`.
+
 
 ## Using ytBot
 
