@@ -81,7 +81,7 @@ export class SonosBot {
 
             const keyboard = new InlineKeyboard();
             devices.forEach((device) => {
-                keyboard.text(`${device.name} (${device.ip})`, `sonos_select:${device.ip}`);
+                keyboard.text(`${device.name}`, `sonos_select:${device.ip}`);
                 keyboard.row();
             });
 
@@ -171,7 +171,12 @@ export class SonosBot {
 
             await this.sonosService.playUri(device.ip, mediaUrl);
 
-            await ctx.reply(`✅ Sent to Sonos: ${device.name} (${device.ip})`);
+            const sentMessage = await ctx.reply(`✅ Sent to Sonos: ${device.name}`);
+            try {
+                await MessageUtils.scheduleMessageDeletion(ctx, sentMessage.message_id, 60000);
+            } catch (error) {
+                console.error('[SonosBot] Failed to schedule sent message deletion:', error);
+            }
         } catch (error) {
             await ctx.reply(ErrorUtils.createErrorMessage('send audio to Sonos', error));
         } finally {
