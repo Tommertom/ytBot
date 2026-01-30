@@ -30,7 +30,12 @@ export class YouTubeBot {
         bot.callbackQuery(/^stop_playlist:/, this.handleStopPlaylist.bind(this));
 
         // Register message handler for YouTube links
-        bot.on('message:text', AccessControlMiddleware.requireAccess, this.handleTextMessage.bind(this));
+        bot.on('message:text', AccessControlMiddleware.requireAccess, async (ctx, next) => {
+            const handled = await this.handleTextMessage(ctx);
+            if (!handled) {
+                await next();
+            }
+        });
     }
 
     private async handleStopPlaylist(ctx: Context): Promise<void> {
@@ -91,15 +96,18 @@ export class YouTubeBot {
         }
     }
 
-    private async handleTextMessage(ctx: Context): Promise<void> {
-        if (!ctx.message?.text) return;
+    private async handleTextMessage(ctx: Context): Promise<boolean> {
+        if (!ctx.message?.text) return false;
 
         try {
             const text = ctx.message.text;
+            if (text.trim().startsWith('/')) {
+                return false;
+            }
             const youtubeUrls = this.youtubeService.extractYouTubeUrls(text);
 
             if (youtubeUrls.length === 0) {
-                return;
+                return false;
             }
 
             const confirmationMessage = await ctx.reply(
@@ -123,8 +131,11 @@ export class YouTubeBot {
                     await this.handleSingleVideoDownload(ctx, url);
                 }
             }
+
+            return true;
         } catch (error) {
             await ctx.reply(ErrorUtils.createErrorMessage('process message', error));
+            return true;
         }
     }
 

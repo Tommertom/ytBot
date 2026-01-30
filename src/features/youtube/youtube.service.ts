@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import NodeID3 from 'node-id3';
 import { DownloadOptions, DownloadResult, VideoInfo, PlaylistInfo, PlaylistVideoInfo, PlaylistDownloadOptions, PlaylistDownloadResult } from './youtube.types.js';
 
 export class YouTubeService {
@@ -15,7 +16,7 @@ export class YouTubeService {
         this.maxFileSize = maxFileSize;
         this.defaultQuality = 'best';
         this.fileDetectionWindow = 180000; // 3 minutes (increased from 60 seconds)
-        
+
         this.verifyYtDlpPath();
     }
 
@@ -26,7 +27,7 @@ export class YouTubeService {
         if (!fs.existsSync(this.ytDlpPath)) {
             throw new Error(`yt-dlp not found at path: ${this.ytDlpPath}`);
         }
-        
+
         const stats = fs.statSync(this.ytDlpPath);
         if (!stats.isFile()) {
             throw new Error(`yt-dlp path is not a file: ${this.ytDlpPath}`);
@@ -72,14 +73,14 @@ export class YouTubeService {
         if (url.length > YouTubeService.MAX_URL_LENGTH) {
             return false;
         }
-        
+
         if (!/^https?:\/\//i.test(url)) {
             return false;
         }
-        
+
         const playlistRegex = /[?&]list=([a-zA-Z0-9_-]+)/;
         const isPlaylistPage = /youtube\.com\/playlist\?list=/i.test(url);
-        
+
         return isPlaylistPage || playlistRegex.test(url);
     }
 
@@ -105,20 +106,20 @@ export class YouTubeService {
 
             const output = await this.executeYtDlp(args);
             const lines = output.trim().split('\n');
-            
+
             const videos: PlaylistVideoInfo[] = [];
             let playlistTitle = 'Unknown Playlist';
-            
+
             for (const line of lines) {
                 if (!line.trim()) continue;
-                
+
                 try {
                     const info = JSON.parse(line);
-                    
+
                     if (info._type === 'playlist' || info.playlist_title) {
                         playlistTitle = info.title || info.playlist_title || playlistTitle;
                     }
-                    
+
                     if (info.id && info._type !== 'playlist') {
                         videos.push({
                             id: info.id,
@@ -131,7 +132,7 @@ export class YouTubeService {
                     console.error('[YouTubeService] Failed to parse playlist item:', e);
                 }
             }
-            
+
             if (videos.length === 0) {
                 playlistTitle = 'Unknown Playlist';
             }
@@ -270,6 +271,13 @@ export class YouTubeService {
             '-x', // Extract audio
             '--audio-format', 'mp3', // Convert to MP3
             '--audio-quality', audioBitrate, // Audio quality/bitrate
+            '--embed-metadata', // Embed metadata into the MP3
+            '--metadata', 'title:%(title)s', // Set ID3 title to video title
+            '--metadata', 'artist:%(title)s', // Set ID3 artist to video title
+            '--metadata', 'album:%(title)s', // Set ID3 album to video title (Sonos display)
+            '--metadata', 'album_artist:%(title)s', // Set ID3 album artist (Sonos display)
+            '--embed-thumbnail', // Embed thumbnail as album art
+            '--convert-thumbnails', 'jpg', // Ensure compatible thumbnail format
             '--no-playlist',
             '--output', outputTemplate,
             '--print', 'after_move:filepath', // Print final file path
@@ -292,7 +300,7 @@ export class YouTubeService {
                         console.error(`[YouTubeService] SECURITY: Path traversal detected - ${trimmedLine}`);
                         throw new Error('Path traversal detected in output file');
                     }
-                    
+
                     detectedFilePath = trimmedLine;
                     console.log(`[YouTubeService] Detected file from yt-dlp output: ${detectedFilePath}`);
                     break;
@@ -325,6 +333,8 @@ export class YouTubeService {
                         currentBitrate: bitrateNum
                     };
                 }
+
+                this.logId3Tags(detectedFilePath);
 
                 return {
                     success: true,
@@ -361,7 +371,7 @@ export class YouTubeService {
 
             if (files.length > 0) {
                 const filePath = path.join(options.outputPath, files[0]);
-                
+
                 // Security fix #3: Validate output path to prevent path traversal
                 if (!this.validateOutputPath(filePath, options.outputPath)) {
                     console.error(`[YouTubeService] SECURITY: Path traversal detected - ${filePath}`);
@@ -370,7 +380,7 @@ export class YouTubeService {
                         error: 'Path traversal detected in output file'
                     };
                 }
-                
+
                 const stats = fs.statSync(filePath);
                 const fileSizeMB = stats.size / (1024 * 1024);
 
@@ -395,6 +405,8 @@ export class YouTubeService {
                         currentBitrate: bitrateNum
                     };
                 }
+
+                this.logId3Tags(filePath);
 
                 return {
                     success: true,
@@ -438,16 +450,16 @@ export class YouTubeService {
      * Maximum 50 videos (configurable), downloads one at a time
      */
     async downloadPlaylist(
-        url: string, 
+        url: string,
         options: PlaylistDownloadOptions
     ): Promise<PlaylistDownloadResult> {
         const maxPlaylistSize = options.maxPlaylistSize || 50;
         const downloadDelayMs = options.downloadDelayMs || 1000;
         const results: DownloadResult[] = [];
-        
+
         try {
             const playlistInfo = await this.getPlaylistInfo(url);
-            
+
             if (!playlistInfo || playlistInfo.videos.length === 0) {
                 return {
                     success: false,
@@ -457,10 +469,10 @@ export class YouTubeService {
                     total: 0
                 };
             }
-            
+
             const videosToDownload = playlistInfo.videos.slice(0, maxPlaylistSize);
             const totalVideos = videosToDownload.length;
-            
+
             if (playlistInfo.videos.length > maxPlaylistSize) {
                 const warningMsg = `⚠️ Playlist has ${playlistInfo.videos.length} videos. Downloading first ${maxPlaylistSize} only.`;
                 console.log(`[YouTubeService] ${warningMsg}`);
@@ -468,31 +480,31 @@ export class YouTubeService {
                     await options.statusCallback(warningMsg);
                 }
             }
-            
+
             for (let i = 0; i < videosToDownload.length; i++) {
                 // Check if download was cancelled
                 if (options.shouldStop?.()) {
                     console.log(`[YouTubeService] Playlist download stopped by user at video ${i + 1}/${totalVideos}`);
                     break;
                 }
-                
+
                 const video = videosToDownload[i];
                 const progressMsg = `📥 [${i + 1}/${totalVideos}] Downloading: ${video.title}`;
-                
+
                 console.log(`[YouTubeService] ${progressMsg}`);
                 if (options.statusCallback) {
                     await options.statusCallback(progressMsg);
                 }
-                
+
                 try {
                     const downloadResult = await this.downloadVideo(video.url, {
                         outputPath: options.outputPath,
                         quality: options.quality,
                         statusCallback: options.videoStatusCallback
                     });
-                    
+
                     results.push(downloadResult);
-                    
+
                     if (downloadResult.success) {
                         const fileSizeMB = downloadResult.fileSize ? (downloadResult.fileSize / (1024 * 1024)).toFixed(1) : '?';
                         const successMsg = `✅ [${i + 1}/${totalVideos}] Complete: ${video.title} (${fileSizeMB}MB)`;
@@ -507,29 +519,29 @@ export class YouTubeService {
                             await options.statusCallback(errorMsg);
                         }
                     }
-                    
+
                     // Delay between downloads to avoid rate limiting
                     if (i < videosToDownload.length - 1) {
                         await this.delay(downloadDelayMs);
                     }
-                    
+
                 } catch (error) {
                     const errorMsg = `❌ [${i + 1}/${totalVideos}] Error: ${video.title} - ${error}`;
                     console.error(`[YouTubeService] ${errorMsg}`);
                     if (options.statusCallback) {
                         await options.statusCallback(errorMsg);
                     }
-                    
+
                     results.push({
                         success: false,
                         error: error instanceof Error ? error.message : 'Unknown error'
                     });
                 }
             }
-            
+
             const successful = results.filter(r => r.success).length;
             const failed = results.filter(r => !r.success).length;
-            
+
             return {
                 success: successful > 0,
                 downloaded: successful,
@@ -537,7 +549,7 @@ export class YouTubeService {
                 total: totalVideos,
                 results: results
             };
-            
+
         } catch (error) {
             console.error('[YouTubeService] Playlist download error:', error);
             return {
@@ -565,16 +577,40 @@ export class YouTubeService {
     private validateOutputPath(filePath: string, baseDir: string): boolean {
         const resolvedPath = path.resolve(filePath);
         const resolvedBase = path.resolve(baseDir);
-        
+
         const isValid = resolvedPath.startsWith(resolvedBase);
-        
+
         if (!isValid) {
             console.error(`[YouTubeService] Path validation failed:`);
             console.error(`  File path: ${resolvedPath}`);
             console.error(`  Base dir:  ${resolvedBase}`);
         }
-        
+
         return isValid;
+    }
+
+    /**
+     * Log ID3 tags for a downloaded MP3
+     */
+    private logId3Tags(filePath: string): void {
+        try {
+            if (!fs.existsSync(filePath)) {
+                return;
+            }
+
+            const tags = NodeID3.read(filePath);
+
+            console.log('[YouTubeService] ID3 tags:', {
+                title: tags?.title ?? null,
+                artist: tags?.artist ?? null,
+                album: tags?.album ?? null,
+                year: tags?.year ?? null,
+                genre: tags?.genre ?? null,
+                trackNumber: tags?.trackNumber ?? null
+            });
+        } catch (error) {
+            console.error('[YouTubeService] Failed to read ID3 tags:', error);
+        }
     }
 
     /**

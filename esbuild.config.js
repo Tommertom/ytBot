@@ -49,6 +49,7 @@ const commonOptions = {
     "dotenv",
     "ai",
     "archiver",
+    "node-id3",
     "zod",
   ],
   banner: {
@@ -60,7 +61,7 @@ async function build() {
   try {
     console.log("🔨 Building with esbuild...");
     console.log(
-      `   Mode: ${isProd ? "production (minified)" : "development"}\n`
+      `   Mode: ${isProd ? "production (minified)" : "development"}\n`,
     );
 
     // Clean dist directory

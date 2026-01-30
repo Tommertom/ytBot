@@ -83,6 +83,10 @@ The bot was giving "Downloaded file not found" errors. Now it works reliably.
 | 30-45 min    | ~62 MB       | ⚠️ Lower quality |
 | > 45 min     | ~83+ MB      | ⚠️ May fail |
 
+## 🎵 Sonos Metadata
+
+To improve title/cover display in Sonos, MP3s now include ID3 album and album artist tags in addition to title, artist, and embedded cover art.
+
 ## 🔧 How to Deploy
 
 ```bash

@@ -124,7 +124,25 @@ console.log(`[YouTubeService] Scanning file: ${f}, Age: ${fileAge}ms, Recent: ${
 - Better visibility into what's happening
 - Helps identify issues in production
 
-### 6. Improved User-Facing Error Messages
+### 6. ID3 Tagging with Video Title
+**Changed**: MP3s now embed ID3 metadata and set both title and artist to the YouTube video title
+
+```typescript
+const args = [
+    // ... other args
+    '--embed-metadata',
+    '--metadata', 'title:%(title)s',
+    '--metadata', 'artist:%(title)s',
+    // ...
+];
+```
+
+**Benefits**:
+- Consistent metadata across all downloads
+- Better playback display in media players
+- No manual tag edits required
+
+### 7. Improved User-Facing Error Messages
 **Changed**: More descriptive error messages for end users
 
 ```typescript
