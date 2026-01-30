@@ -112,15 +112,18 @@ export class SonosBot {
 
         try {
             if (ctx.callbackQuery?.message) {
-                await ctx.api.editMessageReplyMarkup(ctx.callbackQuery.message.chat.id, ctx.callbackQuery.message.message_id, {
-                    reply_markup: undefined
-                });
+                await ctx.api.deleteMessage(ctx.callbackQuery.message.chat.id, ctx.callbackQuery.message.message_id);
             }
         } catch (error) {
-            console.error('[SonosBot] Failed to clear selection keyboard:', error);
+            console.error('[SonosBot] Failed to delete selection message:', error);
         }
 
-        await ctx.reply(`✅ Selected Sonos device: ${device.name} (${device.ip})`);
+        const selectedMessage = await ctx.reply(`✅ Selected Sonos device: ${device.name} (${device.ip})`);
+        try {
+            await MessageUtils.scheduleMessageDeletion(ctx, selectedMessage.message_id, 60000);
+        } catch (error) {
+            console.error('[SonosBot] Failed to schedule selected device message deletion:', error);
+        }
     }
 
     private async sendToSonos(ctx: Context, url: string, device: SonosDevice): Promise<void> {

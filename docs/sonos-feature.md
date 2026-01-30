@@ -41,3 +41,4 @@ If `SONOS_MEDIA_HOST` is not set, the bot will try to auto-detect the Raspberry 
 - MP3s are downloaded to the `mp3-download` subfolder inside the configured media temp directory.
 - The bot starts a lightweight HTTP server on the Raspberry Pi to serve the MP3 to Sonos.
 - Sonos requires HTTP range support for streaming; this is handled automatically by the bot.
+- The device picker message is removed after selection, and the confirmation message auto-deletes after 1 minute.
