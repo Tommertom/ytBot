@@ -83,6 +83,8 @@ class SonosMediaServer {
 
         res.setHeader('Content-Type', contentType);
         res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'close');
 
         if (rangeHeader) {
             const rangeMatch = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
