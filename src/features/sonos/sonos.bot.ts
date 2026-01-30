@@ -16,6 +16,7 @@ export class SonosBot {
     private readonly downloadDir: string;
     private readonly userSelectedDevice: Map<number, SonosDevice> = new Map();
     private readonly lastDiscoveryByUser: Map<number, SonosDevice[]> = new Map();
+    private readonly pendingUrlByUser: Map<number, string> = new Map();
 
     constructor(
         botId: string,
@@ -55,7 +56,12 @@ export class SonosBot {
 
             const selectedDevice = this.userSelectedDevice.get(ctx.from.id);
             if (!selectedDevice) {
-                await ctx.reply('❌ No Sonos device selected. Send /sonos to pick a device first.');
+                // Remember the first URL the user tried to play so we can continue after they select a device
+                this.pendingUrlByUser.set(ctx.from.id, urls[0]);
+
+                // Notify and show device picker
+                await ctx.reply('❌ No device selected');
+                await this.showDevicePicker(ctx);
                 return;
             }
 
@@ -73,6 +79,8 @@ export class SonosBot {
         try {
             const devices = await this.sonosService.discoverDevices();
             if (!devices.length) {
+                // If user had a pending URL, clear it because there are no devices to select
+                this.pendingUrlByUser.delete(ctx.from!.id);
                 await ctx.reply('❌ No Sonos devices found on the network. Make sure they are online and on the same LAN.');
                 return;
             }
@@ -123,6 +131,19 @@ export class SonosBot {
             await MessageUtils.scheduleMessageDeletion(ctx, selectedMessage.message_id, 60000);
         } catch (error) {
             console.error('[SonosBot] Failed to schedule selected device message deletion:', error);
+        }
+
+        // If the user had previously requested playback but no device was selected, continue now
+        const pendingUrl = this.pendingUrlByUser.get(ctx.from.id);
+        if (pendingUrl) {
+            this.pendingUrlByUser.delete(ctx.from.id);
+            try {
+                await ctx.reply('ℹ️ Device selected — starting download and sending to Sonos...');
+                await this.sendToSonos(ctx, pendingUrl, device);
+            } catch (error) {
+                console.error('[SonosBot] Failed to send pending URL to Sonos:', error);
+                await ctx.reply(ErrorUtils.createErrorMessage('send audio to Sonos', error));
+            }
         }
     }
 
