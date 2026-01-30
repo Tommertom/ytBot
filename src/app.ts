@@ -2,6 +2,8 @@ import { Bot } from "grammy";
 import { ConfigService } from './services/config.service.js';
 import { YouTubeService } from './features/youtube/youtube.service.js';
 import { YouTubeBot } from './features/youtube/youtube.bot.js';
+import { SonosBot } from './features/sonos/sonos.bot.js';
+import { SonosService } from './features/sonos/sonos.service.js';
 import { AccessControlMiddleware } from './middleware/access-control.middleware.js';
 import dotenv from 'dotenv';
 import * as fs from 'fs';
@@ -38,6 +40,8 @@ const bot = new Bot(botToken);
 
 // Initialize services
 const youtubeService = new YouTubeService();
+const sonosDownloadDir = path.join(configService.getMediaTmpLocation(), 'mp3-download');
+const sonosService = new SonosService(configService, sonosDownloadDir);
 
 // Set global error handler to prevent crashes
 bot.catch((err) => {
@@ -53,9 +57,11 @@ AccessControlMiddleware.setBot(bot);
 
 // Initialize the YouTube bot
 const youtubeBot = new YouTubeBot(botToken, youtubeService, configService);
+const sonosBot = new SonosBot(botToken, youtubeService, configService, sonosService, sonosDownloadDir);
 
 // Register handlers
 youtubeBot.registerHandlers(bot);
+sonosBot.registerHandlers(bot);
 
 async function startBot() {
     try {
@@ -84,7 +90,8 @@ async function startBot() {
         try {
             await bot.api.setMyCommands([
                 { command: 'start', description: 'Show help message' },
-                { command: 'help', description: 'Show help message' }
+                { command: 'help', description: 'Show help message' },
+                { command: 'sonos', description: 'Send a YouTube MP3 to Sonos' }
             ]);
             console.log('[ytBot] ✅ Bot commands registered');
         } catch (error) {

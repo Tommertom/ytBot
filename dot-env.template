@@ -19,3 +19,22 @@ ADMIN_USER_ID=
 # Time to wait before automatically deleting confirmation messages
 # Set to 0 to disable auto-deletion of messages
 MESSAGE_DELETE_TIMEOUT=10000
+
+# Playlist Configuration (optional)
+# Maximum number of videos to download from a playlist (default: 50)
+# Prevents excessive resource usage and long download times
+MAX_PLAYLIST_SIZE=50
+
+# Delay between playlist video downloads in milliseconds (default: 1000 = 1 second)
+# Helps prevent rate limiting by YouTube
+PLAYLIST_DOWNLOAD_DELAY_MS=1000
+
+# Sonos Configuration (optional)
+# IP address or hostname Sonos can reach for media (auto-detected if empty)
+SONOS_MEDIA_HOST=
+
+# Port for the local HTTP server that serves MP3 files (default: 8787)
+SONOS_MEDIA_PORT=8787
+
+# Python executable used to run SoCo helper scripts (default: python3)
+SONOS_PYTHON_PATH=python3

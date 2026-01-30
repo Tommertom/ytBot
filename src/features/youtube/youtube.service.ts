@@ -1,7 +1,7 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DownloadOptions, DownloadResult, VideoInfo } from './youtube.types.js';
+import { DownloadOptions, DownloadResult, VideoInfo, PlaylistInfo, PlaylistVideoInfo, PlaylistDownloadOptions, PlaylistDownloadResult } from './youtube.types.js';
 
 export class YouTubeService {
     private ytDlpPath: string;
@@ -50,8 +50,8 @@ export class YouTubeService {
             return false;
         }
 
-        // Validate YouTube domain
-        const youtubeRegex = /^https?:\/\/(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)/i;
+        // Validate YouTube domain (including playlists)
+        const youtubeRegex = /^https?:\/\/(www\.)?(youtube\.com\/(watch\?v=|shorts\/|playlist\?list=)|youtu\.be\/)/i;
         return youtubeRegex.test(url);
     }
 
@@ -59,9 +59,92 @@ export class YouTubeService {
      * Extract YouTube URLs from text
      */
     extractYouTubeUrls(text: string): string[] {
-        const urlRegex = /(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)[^\s]+/gi;
+        const urlRegex = /(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/|playlist\?list=)|youtu\.be\/)[^\s]+/gi;
         const matches = text.match(urlRegex);
         return matches ? matches.filter(url => this.isYouTubeUrl(url)) : [];
+    }
+
+    /**
+     * Check if a URL contains a YouTube playlist
+     * Security: Validates URL scheme and length
+     */
+    isPlaylistUrl(url: string): boolean {
+        if (url.length > YouTubeService.MAX_URL_LENGTH) {
+            return false;
+        }
+        
+        if (!/^https?:\/\//i.test(url)) {
+            return false;
+        }
+        
+        const playlistRegex = /[?&]list=([a-zA-Z0-9_-]+)/;
+        const isPlaylistPage = /youtube\.com\/playlist\?list=/i.test(url);
+        
+        return isPlaylistPage || playlistRegex.test(url);
+    }
+
+    /**
+     * Extract playlist ID from URL
+     */
+    extractPlaylistId(url: string): string | null {
+        const match = url.match(/[?&]list=([a-zA-Z0-9_-]+)/);
+        return match ? match[1] : null;
+    }
+
+    /**
+     * Get playlist information without downloading
+     */
+    async getPlaylistInfo(url: string): Promise<PlaylistInfo | null> {
+        try {
+            const args = [
+                '--dump-json',
+                '--flat-playlist',
+                '--',
+                url
+            ];
+
+            const output = await this.executeYtDlp(args);
+            const lines = output.trim().split('\n');
+            
+            const videos: PlaylistVideoInfo[] = [];
+            let playlistTitle = 'Unknown Playlist';
+            
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                
+                try {
+                    const info = JSON.parse(line);
+                    
+                    if (info._type === 'playlist' || info.playlist_title) {
+                        playlistTitle = info.title || info.playlist_title || playlistTitle;
+                    }
+                    
+                    if (info.id && info._type !== 'playlist') {
+                        videos.push({
+                            id: info.id,
+                            title: info.title || 'Unknown',
+                            duration: info.duration || 0,
+                            url: `https://www.youtube.com/watch?v=${info.id}`
+                        });
+                    }
+                } catch (e) {
+                    console.error('[YouTubeService] Failed to parse playlist item:', e);
+                }
+            }
+            
+            if (videos.length === 0) {
+                playlistTitle = 'Unknown Playlist';
+            }
+
+            return {
+                title: playlistTitle,
+                videoCount: videos.length,
+                videos: videos
+            };
+        } catch (error) {
+            console.error('[YouTubeService] Failed to get playlist info:', error);
+            return null;
+        }
     }
 
     /**
@@ -134,24 +217,24 @@ export class YouTubeService {
                     const estimatedCurrentBitrate = 256;
                     nextBitrate = this.calculateNextBitrate(estimatedCurrentBitrate, actualSizeMB, this.maxFileSize);
 
-                    const msg = `⚠️ File too large (${actualSizeMB.toFixed(1)}MB). Calculated optimal bitrate: ${nextBitrate}kbps...`;
+                    const msg = `⚠️ File too large (${actualSizeMB.toFixed(1)}MB). Reducing quality... [Attempt ${attemptCount + 1}/${maxAttempts}]`;
                     console.log(msg);
-                    if (statusCallback) statusCallback(msg);
+                    if (statusCallback) await statusCallback(msg);
                 } else if (result.fileSize && result.currentBitrate) {
                     // We have size and bitrate from previous attempt
                     const actualSizeMB = result.fileSize / (1024 * 1024);
                     nextBitrate = this.calculateNextBitrate(result.currentBitrate, actualSizeMB, this.maxFileSize);
 
-                    const msg = `⚠️ Still too large (${actualSizeMB.toFixed(1)}MB). Trying ${nextBitrate}kbps...`;
+                    const msg = `⚠️ Still too large (${actualSizeMB.toFixed(1)}MB). Trying ${nextBitrate}kbps... [Attempt ${attemptCount + 1}/${maxAttempts}]`;
                     console.log(msg);
-                    if (statusCallback) statusCallback(msg);
+                    if (statusCallback) await statusCallback(msg);
                 } else {
                     // Fallback to predefined qualities if we don't have size info
                     nextBitrate = predefinedQualities[Math.min(attemptCount - 1, predefinedQualities.length - 1)];
 
-                    const msg = `⚠️ File too large. Trying ${nextBitrate}kbps...`;
+                    const msg = `⚠️ File too large. Trying ${nextBitrate}kbps... [Attempt ${attemptCount + 1}/${maxAttempts}]`;
                     console.log(msg);
-                    if (statusCallback) statusCallback(msg);
+                    if (statusCallback) await statusCallback(msg);
                 }
 
                 // Attempt download with calculated bitrate
@@ -163,7 +246,7 @@ export class YouTubeService {
             if (!result.success && result.error?.includes('too large')) {
                 const msg = '❌ Unable to reduce file size below 50MB even at lowest quality. Please try a shorter video.';
                 console.log(msg);
-                if (statusCallback) statusCallback(msg);
+                if (statusCallback) await statusCallback(msg);
             }
 
             return result;
@@ -348,6 +431,131 @@ export class YouTubeService {
                 error: errorMessage
             };
         }
+    }
+
+    /**
+     * Download entire playlist sequentially
+     * Maximum 50 videos (configurable), downloads one at a time
+     */
+    async downloadPlaylist(
+        url: string, 
+        options: PlaylistDownloadOptions
+    ): Promise<PlaylistDownloadResult> {
+        const maxPlaylistSize = options.maxPlaylistSize || 50;
+        const downloadDelayMs = options.downloadDelayMs || 1000;
+        const results: DownloadResult[] = [];
+        
+        try {
+            const playlistInfo = await this.getPlaylistInfo(url);
+            
+            if (!playlistInfo || playlistInfo.videos.length === 0) {
+                return {
+                    success: false,
+                    error: 'Failed to get playlist information or playlist is empty',
+                    downloaded: 0,
+                    failed: 0,
+                    total: 0
+                };
+            }
+            
+            const videosToDownload = playlistInfo.videos.slice(0, maxPlaylistSize);
+            const totalVideos = videosToDownload.length;
+            
+            if (playlistInfo.videos.length > maxPlaylistSize) {
+                const warningMsg = `⚠️ Playlist has ${playlistInfo.videos.length} videos. Downloading first ${maxPlaylistSize} only.`;
+                console.log(`[YouTubeService] ${warningMsg}`);
+                if (options.statusCallback) {
+                    await options.statusCallback(warningMsg);
+                }
+            }
+            
+            for (let i = 0; i < videosToDownload.length; i++) {
+                // Check if download was cancelled
+                if (options.shouldStop?.()) {
+                    console.log(`[YouTubeService] Playlist download stopped by user at video ${i + 1}/${totalVideos}`);
+                    break;
+                }
+                
+                const video = videosToDownload[i];
+                const progressMsg = `📥 [${i + 1}/${totalVideos}] Downloading: ${video.title}`;
+                
+                console.log(`[YouTubeService] ${progressMsg}`);
+                if (options.statusCallback) {
+                    await options.statusCallback(progressMsg);
+                }
+                
+                try {
+                    const downloadResult = await this.downloadVideo(video.url, {
+                        outputPath: options.outputPath,
+                        quality: options.quality,
+                        statusCallback: options.videoStatusCallback
+                    });
+                    
+                    results.push(downloadResult);
+                    
+                    if (downloadResult.success) {
+                        const fileSizeMB = downloadResult.fileSize ? (downloadResult.fileSize / (1024 * 1024)).toFixed(1) : '?';
+                        const successMsg = `✅ [${i + 1}/${totalVideos}] Complete: ${video.title} (${fileSizeMB}MB)`;
+                        console.log(`[YouTubeService] ${successMsg}`);
+                        if (options.statusCallback) {
+                            await options.statusCallback(successMsg);
+                        }
+                    } else {
+                        const errorMsg = `❌ [${i + 1}/${totalVideos}] Failed: ${video.title} - ${downloadResult.error}`;
+                        console.error(`[YouTubeService] ${errorMsg}`);
+                        if (options.statusCallback) {
+                            await options.statusCallback(errorMsg);
+                        }
+                    }
+                    
+                    // Delay between downloads to avoid rate limiting
+                    if (i < videosToDownload.length - 1) {
+                        await this.delay(downloadDelayMs);
+                    }
+                    
+                } catch (error) {
+                    const errorMsg = `❌ [${i + 1}/${totalVideos}] Error: ${video.title} - ${error}`;
+                    console.error(`[YouTubeService] ${errorMsg}`);
+                    if (options.statusCallback) {
+                        await options.statusCallback(errorMsg);
+                    }
+                    
+                    results.push({
+                        success: false,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+            }
+            
+            const successful = results.filter(r => r.success).length;
+            const failed = results.filter(r => !r.success).length;
+            
+            return {
+                success: successful > 0,
+                downloaded: successful,
+                failed: failed,
+                total: totalVideos,
+                results: results
+            };
+            
+        } catch (error) {
+            console.error('[YouTubeService] Playlist download error:', error);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error',
+                downloaded: 0,
+                failed: 0,
+                total: 0,
+                results: results
+            };
+        }
+    }
+
+    /**
+     * Utility delay function
+     */
+    private delay(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     /**
