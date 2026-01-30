@@ -187,7 +187,7 @@ export class SonosService {
         }
 
         const args = [deviceIp, mediaUrl];
-        
+
         // Add metadata as JSON if provided
         if (metadata) {
             const metadataJson = JSON.stringify(metadata);
