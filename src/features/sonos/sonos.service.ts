@@ -177,7 +177,7 @@ export class SonosService {
         return Array.isArray(result) ? result : [];
     }
 
-    async playUri(deviceIp: string, mediaUrl: string): Promise<void> {
+    async playUri(deviceIp: string, mediaUrl: string, metadata?: { title: string; artist: string; album: string }): Promise<void> {
         if (!this.isValidIp(deviceIp)) {
             throw new Error('Invalid Sonos device IP address');
         }
@@ -186,7 +186,15 @@ export class SonosService {
             throw new Error('Media URL must be http or https');
         }
 
-        await this.runPython('sonos_play.py', [deviceIp, mediaUrl]);
+        const args = [deviceIp, mediaUrl];
+        
+        // Add metadata as JSON if provided
+        if (metadata) {
+            const metadataJson = JSON.stringify(metadata);
+            args.push(metadataJson);
+        }
+
+        await this.runPython('sonos_play.py', args);
     }
 
     private resolveMediaHost(): string {

@@ -169,7 +169,14 @@ export class SonosBot {
             await this.sonosService.ensureMediaServer();
             const mediaUrl = this.sonosService.getMediaUrl(downloadResult.filePath);
 
-            await this.sonosService.playUri(device.ip, mediaUrl);
+            // Pass metadata to Sonos for proper display
+            const metadata = {
+                title: videoInfo.title,
+                artist: videoInfo.title,
+                album: videoInfo.title
+            };
+
+            await this.sonosService.playUri(device.ip, mediaUrl, metadata);
 
             const sentMessage = await ctx.reply(`✅ Sent to Sonos: ${device.name}`);
             try {
