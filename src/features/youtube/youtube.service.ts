@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import NodeID3 from 'node-id3';
-import { DownloadOptions, DownloadResult, VideoInfo, PlaylistInfo, PlaylistVideoInfo, PlaylistDownloadOptions, PlaylistDownloadResult, TranscriptDownloadOptions, TranscriptDownloadResult } from './youtube.types.js';
+import { DownloadOptions, DownloadResult, VideoInfo, PlaylistInfo, PlaylistVideoInfo, PlaylistDownloadOptions, PlaylistDownloadResult, TranscriptDownloadOptions, TranscriptDownloadResult, TRANSCRIPT_DIRECTORY_NAME } from './youtube.types.js';
 
 export class YouTubeService {
     private ytDlpPath: string;
@@ -11,6 +11,9 @@ export class YouTubeService {
     private defaultQuality: string;
     private fileDetectionWindow: number; // in milliseconds
     private static readonly MAX_URL_LENGTH = 2048;
+    private static readonly MAX_FILENAME_LENGTH = 120;
+    private static readonly MAX_TRANSCRIPT_OVERLAP_WORDS = 20;
+    private static readonly VTT_INLINE_TIMESTAMP_REGEX = /<\d{2}:\d{2}:\d{2}\.\d{3}>/g;
 
     constructor(ytDlpPath: string = '/usr/local/bin/yt-dlp', maxFileSize: number = 50) {
         this.ytDlpPath = ytDlpPath;
@@ -647,7 +650,17 @@ export class YouTubeService {
     }
 
     private createTranscriptSessionDir(baseOutputPath: string): string {
-        const transcriptDir = path.join(baseOutputPath, 'transcripts', randomUUID());
+        const resolvedBaseOutputPath = path.resolve(baseOutputPath);
+        if (!path.isAbsolute(resolvedBaseOutputPath)) {
+            throw new Error('Transcript output path must be absolute.');
+        }
+
+        const transcriptDir = path.join(resolvedBaseOutputPath, TRANSCRIPT_DIRECTORY_NAME, randomUUID());
+
+        if (!this.validateOutputPath(transcriptDir, resolvedBaseOutputPath)) {
+            throw new Error('Path traversal detected in transcript session directory');
+        }
+
         fs.mkdirSync(transcriptDir, { recursive: true });
         return transcriptDir;
     }
@@ -740,7 +753,7 @@ export class YouTubeService {
 
     private cleanTranscriptLine(line: string, isVtt: boolean): string {
         const withoutTimestamps = isVtt
-            ? line.replace(/<\d{2}:\d{2}:\d{2}\.\d{3}>/g, ' ')
+            ? line.replace(YouTubeService.VTT_INLINE_TIMESTAMP_REGEX, ' ')
             : line;
 
         return this.decodeHtmlEntities(
@@ -763,7 +776,11 @@ export class YouTubeService {
 
         const existingWords = existingTranscript.split(/\s+/);
         const nextWords = nextSegment.split(/\s+/);
-        const maxOverlap = Math.min(existingWords.length, nextWords.length, 20);
+        const maxOverlap = Math.min(
+            existingWords.length,
+            nextWords.length,
+            YouTubeService.MAX_TRANSCRIPT_OVERLAP_WORDS
+        );
 
         for (let overlap = maxOverlap; overlap > 0; overlap--) {
             const existingTail = existingWords.slice(-overlap).join(' ').toLowerCase();
@@ -813,7 +830,7 @@ export class YouTubeService {
             .trim();
 
         return sanitized.length > 0
-            ? sanitized.slice(0, 120)
+            ? sanitized.slice(0, YouTubeService.MAX_FILENAME_LENGTH)
             : 'youtube-transcript';
     }
 

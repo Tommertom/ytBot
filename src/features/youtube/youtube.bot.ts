@@ -2,6 +2,7 @@ import { Bot, Context, InputFile, InlineKeyboard } from 'grammy';
 import * as fs from 'fs';
 import * as path from 'path';
 import { YouTubeService } from './youtube.service.js';
+import { TRANSCRIPT_DIRECTORY_NAME } from './youtube.types.js';
 import { ConfigService } from '../../services/config.service.js';
 import { AccessControlMiddleware } from '../../middleware/access-control.middleware.js';
 import { MessageUtils } from '../../utils/message.utils.js';
@@ -437,7 +438,7 @@ export class YouTubeBot {
     }
 
     private cleanupTranscriptSession(filePath: string): void {
-        const transcriptRoot = path.resolve(this.configService.getMediaTmpLocation(), 'transcripts');
+        const transcriptRoot = path.resolve(this.configService.getMediaTmpLocation(), TRANSCRIPT_DIRECTORY_NAME);
         const sessionDir = path.resolve(path.dirname(filePath));
         const relativePath = path.relative(transcriptRoot, sessionDir);
 

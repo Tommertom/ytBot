@@ -73,3 +73,5 @@ export interface TranscriptDownloadResult {
     title?: string;
     error?: string;
 }
+
+export const TRANSCRIPT_DIRECTORY_NAME = 'transcripts';
