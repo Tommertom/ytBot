@@ -324,7 +324,7 @@ export class YouTubeService {
                 title
             };
         } catch (error) {
-            if (sessionDir) {
+            if (sessionDir && fs.existsSync(sessionDir)) {
                 fs.rmSync(sessionDir, { recursive: true, force: true });
             }
 
@@ -692,6 +692,7 @@ export class YouTubeService {
 
     private parseTimedTextBlocks(content: string, isVtt: boolean): string[] {
         const normalizedContent = content
+            // Remove an optional UTF-8 byte order mark so the first cue/header parses correctly.
             .replace(/^\uFEFF/, '')
             .replace(/\r\n/g, '\n');
         const rawBlocks = normalizedContent.split(/\n{2,}/);
@@ -778,13 +779,18 @@ export class YouTubeService {
     }
 
     private decodeHtmlEntities(text: string): string {
-        return text
-            .replace(/&amp;/g, '&')
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&quot;/g, '"')
-            .replace(/&#39;/g, '\'')
-            .replace(/&nbsp;/g, ' ');
+        const entityMap: Record<string, string> = {
+            amp: '&',
+            lt: '<',
+            gt: '>',
+            quot: '"',
+            '#39': '\'',
+            nbsp: ' '
+        };
+
+        return text.replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (match, entity) => {
+            return entityMap[entity] ?? match;
+        });
     }
 
     private buildTranscriptMarkdown(title: string, url: string, transcriptText: string): string {

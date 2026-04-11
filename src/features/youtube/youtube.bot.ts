@@ -122,8 +122,6 @@ export class YouTubeBot {
             return;
         }
 
-        await AccessControlMiddleware.notifyAdminOfDownload(ctx, url);
-
         const statusMessage = await ctx.reply('📝 Downloading the English transcript. Please wait...');
         let transcriptFilePath: string | undefined;
 
@@ -138,6 +136,7 @@ export class YouTubeBot {
             }
 
             transcriptFilePath = transcriptResult.filePath;
+            await AccessControlMiddleware.notifyAdminOfDownload(ctx, url);
 
             await ctx.replyWithDocument(new InputFile(transcriptFilePath), {
                 caption: `📝 ${transcriptResult.title || 'English transcript'}`
@@ -152,7 +151,7 @@ export class YouTubeBot {
             }
 
             if (transcriptFilePath) {
-                fs.rmSync(path.dirname(transcriptFilePath), { recursive: true, force: true });
+                this.cleanupTranscriptSession(transcriptFilePath);
             }
         }
     }
@@ -435,5 +434,22 @@ export class YouTubeBot {
     private extractCommandArguments(text: string, command: string): string {
         const commandPattern = new RegExp(`^\\/${command}(?:@\\w+)?\\s*`, 'i');
         return text.replace(commandPattern, '').trim();
+    }
+
+    private cleanupTranscriptSession(filePath: string): void {
+        const transcriptRoot = path.resolve(this.configService.getMediaTmpLocation(), 'transcripts');
+        const sessionDir = path.resolve(path.dirname(filePath));
+        const relativePath = path.relative(transcriptRoot, sessionDir);
+
+        if (
+            relativePath === '' ||
+            relativePath.startsWith('..') ||
+            path.isAbsolute(relativePath)
+        ) {
+            console.error(`[YouTubeBot] Refusing to clean up unexpected transcript path: ${sessionDir}`);
+            return;
+        }
+
+        fs.rmSync(sessionDir, { recursive: true, force: true });
     }
 }
