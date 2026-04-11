@@ -12,7 +12,7 @@ export class YouTubeBot {
     private youtubeService: YouTubeService;
     private configService: ConfigService;
     private activePlaylistDownloads: Map<string, { cancelled: boolean }> = new Map();
-    private static readonly commandPatterns: Map<string, RegExp> = new Map();
+    private readonly commandPatterns: Map<string, RegExp> = new Map();
 
     constructor(
         botId: string,
@@ -434,10 +434,10 @@ export class YouTubeBot {
     }
 
     private extractCommandArguments(text: string, command: string): string {
-        let commandPattern = YouTubeBot.commandPatterns.get(command);
+        let commandPattern = this.commandPatterns.get(command);
         if (!commandPattern) {
             commandPattern = new RegExp(`^\\/${command}(?:@\\w+)?\\s*`, 'i');
-            YouTubeBot.commandPatterns.set(command, commandPattern);
+            this.commandPatterns.set(command, commandPattern);
         }
 
         return text.replace(commandPattern, '').trim();
