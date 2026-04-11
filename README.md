@@ -10,6 +10,7 @@ No complicated interfaces, no desktop apps, no third-party services - just send 
 ## ✨ Features
 
 - 🎵 **One-Click Conversion** - Just send a YouTube URL, get your media file back
+- 📝 **Transcript Export** - Use `/text <youtube-url>` to get the English transcript as a markdown file
 - 📱 **Mobile-First** - Designed for easy use on your phone via Telegram
 - 🏠 **Self-Hosted** - Runs on YOUR machine, under YOUR control (laptop, server, Raspberry Pi, or any machine you own)
 - 🎧 **Smart Quality Management** - Automatically optimizes file size for mobile
@@ -27,6 +28,14 @@ Once your bot is running and configured:
 2. **Send a YouTube URL** - Any valid YouTube link or playlist
 3. **Wait for download** - The bot will fetch and process the video(s)
 4. **Receive your file(s)** - Audio files sent directly to your chat
+
+**Transcript Example:**
+```
+You: /text https://www.youtube.com/watch?v=dQw4w9WgXcQ
+
+Bot: 📝 Downloading the English transcript. Please wait...
+     [Markdown file sent]
+```
 
 ### Demo
 
@@ -87,6 +96,12 @@ This ensures you always get the audio, even if the original is too large.
 - YouTube Shorts: `https://www.youtube.com/shorts/...`
 - **Playlists**: `https://www.youtube.com/playlist?list=...`
 - **Videos with playlist context**: `https://www.youtube.com/watch?v=...&list=...`
+
+**Commands:**
+- `/start` - Show the help message
+- `/help` - Show the help message
+- `/text <youtube-url>` - Download the English transcript as a markdown file
+- `/sonos <youtube-url>` - Send audio to Sonos
 
 **Playlist Features:**
 - ✅ Downloads up to **50 videos** per playlist (configurable)

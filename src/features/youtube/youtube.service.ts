@@ -1,8 +1,9 @@
 import { spawn } from 'child_process';
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import NodeID3 from 'node-id3';
-import { DownloadOptions, DownloadResult, VideoInfo, PlaylistInfo, PlaylistVideoInfo, PlaylistDownloadOptions, PlaylistDownloadResult } from './youtube.types.js';
+import { DownloadOptions, DownloadResult, VideoInfo, PlaylistInfo, PlaylistVideoInfo, PlaylistDownloadOptions, PlaylistDownloadResult, TranscriptDownloadOptions, TranscriptDownloadResult } from './youtube.types.js';
 
 export class YouTubeService {
     private ytDlpPath: string;
@@ -252,6 +253,81 @@ export class YouTubeService {
 
             return result;
         } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            };
+        }
+    }
+
+    /**
+     * Download an English transcript and convert it to a markdown file
+     */
+    async downloadTranscript(url: string, options: TranscriptDownloadOptions): Promise<TranscriptDownloadResult> {
+        let sessionDir: string | undefined;
+
+        try {
+            if (!this.isYouTubeUrl(url) || this.isPlaylistUrl(url)) {
+                return {
+                    success: false,
+                    error: 'Please provide a single YouTube video URL.'
+                };
+            }
+
+            sessionDir = this.createTranscriptSessionDir(options.outputPath);
+
+            const videoInfo = await this.getVideoInfo(url);
+            const title = videoInfo?.title || 'YouTube Transcript';
+            const outputTemplate = path.join(sessionDir, '%(title)s.%(id)s.%(ext)s');
+            const args = [
+                '--skip-download',
+                '--write-subs',
+                '--write-auto-subs',
+                '--sub-langs', 'en.*,en',
+                '--sub-format', 'vtt',
+                '--no-playlist',
+                '--output', outputTemplate,
+                '--no-warnings',
+                '--',
+                url
+            ];
+
+            await this.executeYtDlp(args);
+
+            const subtitleFilePath = this.findTranscriptSubtitleFile(sessionDir);
+            if (!subtitleFilePath) {
+                throw new Error('No English transcript is available for this video.');
+            }
+
+            const transcriptText = this.extractTranscriptText(subtitleFilePath);
+            if (!transcriptText) {
+                throw new Error('The English transcript was empty.');
+            }
+
+            const fileName = `${this.sanitizeFileName(title)}.md`;
+            const filePath = path.join(sessionDir, fileName);
+
+            fs.writeFileSync(
+                filePath,
+                this.buildTranscriptMarkdown(title, url, transcriptText),
+                'utf8'
+            );
+
+            if (!this.validateOutputPath(filePath, options.outputPath)) {
+                throw new Error('Path traversal detected in transcript output file');
+            }
+
+            return {
+                success: true,
+                filePath,
+                fileName,
+                title
+            };
+        } catch (error) {
+            if (sessionDir) {
+                fs.rmSync(sessionDir, { recursive: true, force: true });
+            }
+
             return {
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error'
@@ -568,6 +644,171 @@ export class YouTubeService {
      */
     private delay(ms: number): Promise<void> {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    private createTranscriptSessionDir(baseOutputPath: string): string {
+        const transcriptDir = path.join(baseOutputPath, 'transcripts', randomUUID());
+        fs.mkdirSync(transcriptDir, { recursive: true });
+        return transcriptDir;
+    }
+
+    private findTranscriptSubtitleFile(sessionDir: string): string | null {
+        if (!fs.existsSync(sessionDir)) {
+            return null;
+        }
+
+        const transcriptFiles = fs.readdirSync(sessionDir)
+            .filter(fileName => /\.(vtt|srt)$/i.test(fileName))
+            .sort((left, right) => {
+                const leftEnglishScore = /\.en[\.-]/i.test(left) ? 1 : 0;
+                const rightEnglishScore = /\.en[\.-]/i.test(right) ? 1 : 0;
+                return rightEnglishScore - leftEnglishScore;
+            });
+
+        if (transcriptFiles.length === 0) {
+            return null;
+        }
+
+        return path.join(sessionDir, transcriptFiles[0]);
+    }
+
+    private extractTranscriptText(filePath: string): string {
+        const rawContent = fs.readFileSync(filePath, 'utf8');
+        const ext = path.extname(filePath).toLowerCase();
+        const blocks = ext === '.srt'
+            ? this.parseTimedTextBlocks(rawContent, false)
+            : this.parseTimedTextBlocks(rawContent, true);
+
+        let transcript = '';
+        for (const block of blocks) {
+            transcript = this.mergeTranscriptSegments(transcript, block);
+        }
+
+        return transcript
+            .replace(/\s+/g, ' ')
+            .replace(/([.!?])\s+(?=[A-Z])/g, '$1\n\n')
+            .trim();
+    }
+
+    private parseTimedTextBlocks(content: string, isVtt: boolean): string[] {
+        const normalizedContent = content
+            .replace(/^\uFEFF/, '')
+            .replace(/\r\n/g, '\n');
+        const rawBlocks = normalizedContent.split(/\n{2,}/);
+        const transcriptBlocks: string[] = [];
+
+        for (const rawBlock of rawBlocks) {
+            const lines = rawBlock
+                .split('\n')
+                .map(line => line.trim())
+                .filter(Boolean);
+
+            if (lines.length === 0) {
+                continue;
+            }
+
+            const firstLine = lines[0].toUpperCase();
+            if (
+                firstLine === 'WEBVTT' ||
+                firstLine.startsWith('NOTE') ||
+                firstLine.startsWith('STYLE') ||
+                firstLine.startsWith('REGION')
+            ) {
+                continue;
+            }
+
+            const timingLineIndex = lines.findIndex(line => line.includes('-->'));
+            if (timingLineIndex === -1) {
+                continue;
+            }
+
+            const cueLines = lines.slice(timingLineIndex + 1);
+            const cueText = cueLines
+                .map(line => this.cleanTranscriptLine(line, isVtt))
+                .filter(Boolean)
+                .join(' ')
+                .trim();
+
+            if (cueText) {
+                transcriptBlocks.push(cueText);
+            }
+        }
+
+        return transcriptBlocks;
+    }
+
+    private cleanTranscriptLine(line: string, isVtt: boolean): string {
+        const withoutTimestamps = isVtt
+            ? line.replace(/<\d{2}:\d{2}:\d{2}\.\d{3}>/g, ' ')
+            : line;
+
+        return this.decodeHtmlEntities(
+            withoutTimestamps
+                .replace(/<\/?c(\.[^>]*)?>/gi, ' ')
+                .replace(/<\/?[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+        );
+    }
+
+    private mergeTranscriptSegments(existingTranscript: string, nextSegment: string): string {
+        if (!existingTranscript) {
+            return nextSegment;
+        }
+
+        if (!nextSegment || existingTranscript === nextSegment) {
+            return existingTranscript;
+        }
+
+        const existingWords = existingTranscript.split(/\s+/);
+        const nextWords = nextSegment.split(/\s+/);
+        const maxOverlap = Math.min(existingWords.length, nextWords.length, 20);
+
+        for (let overlap = maxOverlap; overlap > 0; overlap--) {
+            const existingTail = existingWords.slice(-overlap).join(' ').toLowerCase();
+            const nextHead = nextWords.slice(0, overlap).join(' ').toLowerCase();
+
+            if (existingTail === nextHead) {
+                const remainder = nextWords.slice(overlap).join(' ');
+                return remainder ? `${existingTranscript} ${remainder}` : existingTranscript;
+            }
+        }
+
+        return `${existingTranscript} ${nextSegment}`.trim();
+    }
+
+    private decodeHtmlEntities(text: string): string {
+        return text
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, '\'')
+            .replace(/&nbsp;/g, ' ');
+    }
+
+    private buildTranscriptMarkdown(title: string, url: string, transcriptText: string): string {
+        return [
+            `# ${title}`,
+            '',
+            `Source: ${url}`,
+            'Language: English',
+            '',
+            '## Transcript',
+            '',
+            transcriptText
+        ].join('\n');
+    }
+
+    private sanitizeFileName(fileName: string): string {
+        const sanitized = fileName
+            .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        return sanitized.length > 0
+            ? sanitized.slice(0, 120)
+            : 'youtube-transcript';
     }
 
     /**

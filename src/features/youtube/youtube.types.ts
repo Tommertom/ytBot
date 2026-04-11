@@ -61,3 +61,15 @@ export interface PlaylistDownloadResult {
     error?: string;
     results?: DownloadResult[];
 }
+
+export interface TranscriptDownloadOptions {
+    outputPath: string;
+}
+
+export interface TranscriptDownloadResult {
+    success: boolean;
+    filePath?: string;
+    fileName?: string;
+    title?: string;
+    error?: string;
+}

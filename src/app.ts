@@ -91,6 +91,7 @@ async function startBot() {
             await bot.api.setMyCommands([
                 { command: 'start', description: 'Show help message' },
                 { command: 'help', description: 'Show help message' },
+                { command: 'text', description: 'Download an English transcript as markdown' },
                 { command: 'sonos', description: 'Send a YouTube MP3 to Sonos' }
             ]);
             console.log('[ytBot] ✅ Bot commands registered');
