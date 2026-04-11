@@ -1,6 +1,8 @@
 import { Bot, Context, InputFile, InlineKeyboard } from 'grammy';
 import * as fs from 'fs';
+import * as path from 'path';
 import { YouTubeService } from './youtube.service.js';
+import { TRANSCRIPT_DIRECTORY_NAME } from './youtube.types.js';
 import { ConfigService } from '../../services/config.service.js';
 import { AccessControlMiddleware } from '../../middleware/access-control.middleware.js';
 import { MessageUtils } from '../../utils/message.utils.js';
@@ -10,6 +12,7 @@ export class YouTubeBot {
     private youtubeService: YouTubeService;
     private configService: ConfigService;
     private activePlaylistDownloads: Map<string, { cancelled: boolean }> = new Map();
+    private readonly commandPatterns: Map<string, RegExp> = new Map();
 
     constructor(
         botId: string,
@@ -25,6 +28,7 @@ export class YouTubeBot {
         // Register command handlers
         bot.command('start', AccessControlMiddleware.requireAccess, this.handleStart.bind(this));
         bot.command('help', AccessControlMiddleware.requireAccess, this.handleStart.bind(this)); // Wire help to start
+        bot.command('text', AccessControlMiddleware.requireAccess, this.handleTranscriptCommand.bind(this));
 
         // Register callback query handler for stop button
         bot.callbackQuery(/^stop_playlist:/, this.handleStopPlaylist.bind(this));
@@ -62,10 +66,14 @@ export class YouTubeBot {
                 'Available commands:',
                 '/start - Show this help message',
                 '/help - Show this help message',
+                '/text <youtube-url> - Download the English transcript as markdown',
                 '/sonos - Select a Sonos device or send a YouTube URL',
                 '',
                 '📥 Single Videos:',
                 'Send me a YouTube video URL and I\'ll download the audio as MP3!',
+                '',
+                '📝 Transcripts:',
+                'Use /text <youtube-url> to get the English transcript as a markdown file.',
                 '',
                 '🔊 Sonos Playback:',
                 'Use /sonos to select a device, then /sonos <youtube-url> to play.',
@@ -93,6 +101,60 @@ export class YouTubeBot {
             }
         } catch (error) {
             await ctx.reply(ErrorUtils.createErrorMessage('show help message', error));
+        }
+    }
+
+    private async handleTranscriptCommand(ctx: Context): Promise<void> {
+        if (!ctx.message?.text) {
+            await ctx.reply('Usage: /text <youtube-url>');
+            return;
+        }
+
+        const args = this.extractCommandArguments(ctx.message.text, 'text');
+        const youtubeUrls = this.youtubeService.extractYouTubeUrls(args);
+
+        if (youtubeUrls.length !== 1) {
+            await ctx.reply('Please provide exactly one YouTube video URL.\n\nUsage: /text <youtube-url>');
+            return;
+        }
+
+        const url = youtubeUrls[0];
+        if (this.youtubeService.isPlaylistUrl(url)) {
+            await ctx.reply('❌ /text supports single YouTube videos only, not playlists.');
+            return;
+        }
+
+        const statusMessage = await ctx.reply('📝 Downloading the English transcript. Please wait...');
+        let transcriptFilePath: string | undefined;
+
+        try {
+            const transcriptResult = await this.youtubeService.downloadTranscript(url, {
+                outputPath: this.configService.getMediaTmpLocation()
+            });
+
+            if (!transcriptResult.success || !transcriptResult.filePath) {
+                await ctx.reply(`❌ Failed to download transcript.\n\nError: ${transcriptResult.error || 'Unknown error'}`);
+                return;
+            }
+
+            transcriptFilePath = transcriptResult.filePath;
+            await AccessControlMiddleware.notifyAdminOfDownload(ctx, url);
+
+            await ctx.replyWithDocument(new InputFile(transcriptFilePath), {
+                caption: `📝 ${transcriptResult.title || 'English transcript'}`
+            });
+        } catch (error) {
+            await ctx.reply(ErrorUtils.createErrorMessage('download transcript', error));
+        } finally {
+            try {
+                await ctx.api.deleteMessage(ctx.chat!.id, statusMessage.message_id);
+            } catch (error) {
+                console.error('Failed to delete transcript status message:', error);
+            }
+
+            if (transcriptFilePath) {
+                this.cleanupTranscriptSession(transcriptFilePath);
+            }
         }
     }
 
@@ -369,5 +431,32 @@ export class YouTubeBot {
                 console.error('Failed to delete download message:', error);
             }
         }
+    }
+
+    private extractCommandArguments(text: string, command: string): string {
+        let commandPattern = this.commandPatterns.get(command);
+        if (!commandPattern) {
+            commandPattern = new RegExp(`^\\/${command}(?:@\\w+)?\\s*`, 'i');
+            this.commandPatterns.set(command, commandPattern);
+        }
+
+        return text.replace(commandPattern, '').trim();
+    }
+
+    private cleanupTranscriptSession(filePath: string): void {
+        const transcriptRoot = path.resolve(this.configService.getMediaTmpLocation(), TRANSCRIPT_DIRECTORY_NAME);
+        const sessionDir = path.resolve(path.dirname(filePath));
+        const relativePath = path.relative(transcriptRoot, sessionDir);
+
+        if (
+            relativePath === '' ||
+            relativePath.startsWith('..') ||
+            path.isAbsolute(relativePath)
+        ) {
+            console.error(`[YouTubeBot] Refusing to clean up unexpected transcript path: ${sessionDir}`);
+            return;
+        }
+
+        fs.rmSync(sessionDir, { recursive: true, force: true });
     }
 }

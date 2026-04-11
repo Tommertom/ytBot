@@ -1,8 +1,9 @@
 import { spawn } from 'child_process';
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import NodeID3 from 'node-id3';
-import { DownloadOptions, DownloadResult, VideoInfo, PlaylistInfo, PlaylistVideoInfo, PlaylistDownloadOptions, PlaylistDownloadResult } from './youtube.types.js';
+import { DownloadOptions, DownloadResult, VideoInfo, PlaylistInfo, PlaylistVideoInfo, PlaylistDownloadOptions, PlaylistDownloadResult, TranscriptDownloadOptions, TranscriptDownloadResult, TRANSCRIPT_DIRECTORY_NAME } from './youtube.types.js';
 
 export class YouTubeService {
     private ytDlpPath: string;
@@ -10,6 +11,20 @@ export class YouTubeService {
     private defaultQuality: string;
     private fileDetectionWindow: number; // in milliseconds
     private static readonly MAX_URL_LENGTH = 2048;
+    private static readonly MAX_FILENAME_LENGTH = 120;
+    private static readonly MAX_TRANSCRIPT_OVERLAP_WORDS = 20;
+    private static readonly VTT_INLINE_TIMESTAMP_REGEX = /<\d{2}:\d{2}:\d{2}\.\d{3}>/g;
+    private static readonly TRANSCRIPT_FILE_EXTENSION_REGEX = /\.(vtt|srt)$/i;
+    private static readonly ENGLISH_TRANSCRIPT_FILE_REGEX = /\.en[\.-]/i;
+    private static readonly HTML_ENTITY_REGEX = /&(amp|lt|gt|quot|#39|nbsp);/g;
+    private static readonly HTML_ENTITY_MAP: Record<string, string> = {
+        amp: '&',
+        lt: '<',
+        gt: '>',
+        quot: '"',
+        '#39': '\'',
+        nbsp: ' '
+    };
 
     constructor(ytDlpPath: string = '/usr/local/bin/yt-dlp', maxFileSize: number = 50) {
         this.ytDlpPath = ytDlpPath;
@@ -252,6 +267,81 @@ export class YouTubeService {
 
             return result;
         } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            };
+        }
+    }
+
+    /**
+     * Download an English transcript and convert it to a markdown file
+     */
+    async downloadTranscript(url: string, options: TranscriptDownloadOptions): Promise<TranscriptDownloadResult> {
+        let sessionDir: string | undefined;
+
+        try {
+            if (!this.isYouTubeUrl(url) || this.isPlaylistUrl(url)) {
+                return {
+                    success: false,
+                    error: 'Please provide a single YouTube video URL.'
+                };
+            }
+
+            sessionDir = this.createTranscriptSessionDir(options.outputPath);
+
+            const videoInfo = await this.getVideoInfo(url);
+            const title = videoInfo?.title || 'YouTube Transcript';
+            const outputTemplate = path.join(sessionDir, '%(title)s.%(id)s.%(ext)s');
+            const args = [
+                '--skip-download',
+                '--write-subs',
+                '--write-auto-subs',
+                '--sub-langs', 'en.*,en',
+                '--sub-format', 'vtt',
+                '--no-playlist',
+                '--output', outputTemplate,
+                '--no-warnings',
+                '--',
+                url
+            ];
+
+            await this.executeYtDlp(args);
+
+            const subtitleFilePath = this.findTranscriptSubtitleFile(sessionDir);
+            if (!subtitleFilePath) {
+                throw new Error('No English transcript is available for this video.');
+            }
+
+            const transcriptText = this.extractTranscriptText(subtitleFilePath);
+            if (!transcriptText) {
+                throw new Error('The English transcript was empty.');
+            }
+
+            const fileName = `${this.sanitizeFileName(title)}.md`;
+            const filePath = path.join(sessionDir, fileName);
+
+            fs.writeFileSync(
+                filePath,
+                this.buildTranscriptMarkdown(title, url, transcriptText),
+                'utf8'
+            );
+
+            if (!this.validateOutputPath(filePath, options.outputPath)) {
+                throw new Error('Path traversal detected in transcript output file');
+            }
+
+            return {
+                success: true,
+                filePath,
+                fileName,
+                title
+            };
+        } catch (error) {
+            if (sessionDir && fs.existsSync(sessionDir)) {
+                fs.rmSync(sessionDir, { recursive: true, force: true });
+            }
+
             return {
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error'
@@ -570,6 +660,216 @@ export class YouTubeService {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    private createTranscriptSessionDir(baseOutputPath: string): string {
+        const resolvedBaseOutputPath = path.resolve(baseOutputPath);
+        if (!path.isAbsolute(baseOutputPath)) {
+            throw new Error('Transcript output path must be absolute.');
+        }
+
+        const transcriptDir = path.join(resolvedBaseOutputPath, TRANSCRIPT_DIRECTORY_NAME, randomUUID());
+
+        if (!this.validateOutputPath(transcriptDir, resolvedBaseOutputPath)) {
+            throw new Error('Path traversal detected in transcript session directory');
+        }
+
+        fs.mkdirSync(transcriptDir, { recursive: true });
+        return transcriptDir;
+    }
+
+    private findTranscriptSubtitleFile(sessionDir: string): string | null {
+        if (!fs.existsSync(sessionDir)) {
+            return null;
+        }
+
+        const transcriptFiles = fs.readdirSync(sessionDir)
+            .filter(fileName => YouTubeService.TRANSCRIPT_FILE_EXTENSION_REGEX.test(fileName))
+            .sort((left, right) => {
+                const leftEnglishScore = YouTubeService.ENGLISH_TRANSCRIPT_FILE_REGEX.test(left) ? 1 : 0;
+                const rightEnglishScore = YouTubeService.ENGLISH_TRANSCRIPT_FILE_REGEX.test(right) ? 1 : 0;
+                return rightEnglishScore - leftEnglishScore;
+            });
+
+        if (transcriptFiles.length === 0) {
+            return null;
+        }
+
+        return path.join(sessionDir, transcriptFiles[0]);
+    }
+
+    private extractTranscriptText(filePath: string): string {
+        const rawContent = fs.readFileSync(filePath, 'utf8');
+        const ext = path.extname(filePath).toLowerCase();
+        const blocks = ext === '.srt'
+            ? this.parseTimedTextBlocks(rawContent, false)
+            : this.parseTimedTextBlocks(rawContent, true);
+
+        return this.mergeTranscriptBlocks(blocks)
+            .replace(/\s+/g, ' ')
+            .replace(/([.!?])\s+(?=[A-Z])/g, '$1\n\n')
+            .trim();
+    }
+
+    private parseTimedTextBlocks(content: string, isVtt: boolean): string[] {
+        const normalizedContent = content
+            // Remove an optional UTF-8 byte order mark so the first cue/header parses correctly.
+            .replace(/^\uFEFF/, '')
+            .replace(/\r\n/g, '\n');
+        const rawBlocks = normalizedContent.split(/\n{2,}/);
+        const transcriptBlocks: string[] = [];
+
+        for (const rawBlock of rawBlocks) {
+            const lines = rawBlock
+                .split('\n')
+                .map(line => line.trim())
+                .filter(Boolean);
+
+            if (lines.length === 0) {
+                continue;
+            }
+
+            const firstLine = lines[0].toUpperCase();
+            if (
+                firstLine === 'WEBVTT' ||
+                firstLine.startsWith('NOTE') ||
+                firstLine.startsWith('STYLE') ||
+                firstLine.startsWith('REGION')
+            ) {
+                continue;
+            }
+
+            const timingLineIndex = lines.findIndex(line => line.includes('-->'));
+            if (timingLineIndex === -1) {
+                continue;
+            }
+
+            const cueLines = lines.slice(timingLineIndex + 1);
+            const cueText = cueLines
+                .map(line => this.cleanTranscriptLine(line, isVtt))
+                .filter(Boolean)
+                .join(' ')
+                .trim();
+
+            if (cueText) {
+                transcriptBlocks.push(cueText);
+            }
+        }
+
+        return transcriptBlocks;
+    }
+
+    private cleanTranscriptLine(line: string, isVtt: boolean): string {
+        const withoutTimestamps = isVtt
+            ? line.replace(YouTubeService.VTT_INLINE_TIMESTAMP_REGEX, ' ')
+            : line;
+
+        return this.decodeHtmlEntities(
+            withoutTimestamps
+                .replace(/<\/?c(\.[^>]*)?>/gi, ' ')
+                .replace(/<\/?[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+        );
+    }
+
+    private mergeTranscriptBlocks(blocks: string[]): string {
+        const mergedSegments: string[] = [];
+
+        for (const block of blocks) {
+            const normalizedBlock = block.trim();
+            if (!normalizedBlock) {
+                continue;
+            }
+
+            if (mergedSegments.length === 0) {
+                mergedSegments.push(normalizedBlock);
+                continue;
+            }
+
+            const lastSegment = mergedSegments[mergedSegments.length - 1];
+            if (lastSegment === normalizedBlock) {
+                continue;
+            }
+
+            const overlap = this.findTranscriptSegmentOverlap(lastSegment, normalizedBlock);
+            if (overlap.size > 0) {
+                mergedSegments[mergedSegments.length - 1] = overlap.words.previous
+                    .concat(overlap.words.next.slice(overlap.size))
+                    .join(' ');
+                continue;
+            }
+
+            mergedSegments.push(normalizedBlock);
+        }
+
+        return mergedSegments.join(' ');
+    }
+
+    private findTranscriptSegmentOverlap(
+        previousSegment: string,
+        nextSegment: string
+    ): { size: number; words: { previous: string[]; next: string[] } } {
+        const previousWords = previousSegment.trim().split(/\s+/);
+        const nextWords = nextSegment.trim().split(/\s+/);
+        const maxOverlap = Math.min(
+            previousWords.length,
+            nextWords.length,
+            YouTubeService.MAX_TRANSCRIPT_OVERLAP_WORDS
+        );
+
+        for (let overlap = maxOverlap; overlap > 0; overlap--) {
+            const previousTail = previousWords.slice(-overlap).join(' ').toLowerCase();
+            const nextHead = nextWords.slice(0, overlap).join(' ').toLowerCase();
+
+            if (previousTail === nextHead) {
+                return {
+                    size: overlap,
+                    words: {
+                        previous: previousWords,
+                        next: nextWords
+                    }
+                };
+            }
+        }
+
+        return {
+            size: 0,
+            words: {
+                previous: previousWords,
+                next: nextWords
+            }
+        };
+    }
+
+    private decodeHtmlEntities(text: string): string {
+        return text.replace(YouTubeService.HTML_ENTITY_REGEX, (match, entity) => {
+            return YouTubeService.HTML_ENTITY_MAP[entity] ?? match;
+        });
+    }
+
+    private buildTranscriptMarkdown(title: string, url: string, transcriptText: string): string {
+        return [
+            `# ${title}`,
+            '',
+            `Source: ${url}`,
+            'Language: English',
+            '',
+            '## Transcript',
+            '',
+            transcriptText
+        ].join('\n');
+    }
+
+    private sanitizeFileName(fileName: string): string {
+        const sanitized = fileName
+            .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        return sanitized.length > 0
+            ? sanitized.slice(0, YouTubeService.MAX_FILENAME_LENGTH)
+            : 'youtube-transcript';
+    }
+
     /**
      * Validate that a file path is within the expected output directory
      * Security fix #3: Prevent path traversal attacks
@@ -577,8 +877,11 @@ export class YouTubeService {
     private validateOutputPath(filePath: string, baseDir: string): boolean {
         const resolvedPath = path.resolve(filePath);
         const resolvedBase = path.resolve(baseDir);
+        const baseWithSeparator = resolvedBase.endsWith(path.sep)
+            ? resolvedBase
+            : `${resolvedBase}${path.sep}`;
 
-        const isValid = resolvedPath.startsWith(resolvedBase);
+        const isValid = resolvedPath === resolvedBase || resolvedPath.startsWith(baseWithSeparator);
 
         if (!isValid) {
             console.error(`[YouTubeService] Path validation failed:`);
