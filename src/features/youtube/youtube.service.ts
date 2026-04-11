@@ -14,6 +14,17 @@ export class YouTubeService {
     private static readonly MAX_FILENAME_LENGTH = 120;
     private static readonly MAX_TRANSCRIPT_OVERLAP_WORDS = 20;
     private static readonly VTT_INLINE_TIMESTAMP_REGEX = /<\d{2}:\d{2}:\d{2}\.\d{3}>/g;
+    private static readonly TRANSCRIPT_FILE_EXTENSION_REGEX = /\.(vtt|srt)$/i;
+    private static readonly ENGLISH_TRANSCRIPT_FILE_REGEX = /\.en[\.-]/i;
+    private static readonly HTML_ENTITY_REGEX = /&(amp|lt|gt|quot|#39|nbsp);/g;
+    private static readonly HTML_ENTITY_MAP: Record<string, string> = {
+        amp: '&',
+        lt: '<',
+        gt: '>',
+        quot: '"',
+        '#39': '\'',
+        nbsp: ' '
+    };
 
     constructor(ytDlpPath: string = '/usr/local/bin/yt-dlp', maxFileSize: number = 50) {
         this.ytDlpPath = ytDlpPath;
@@ -650,11 +661,11 @@ export class YouTubeService {
     }
 
     private createTranscriptSessionDir(baseOutputPath: string): string {
-        const resolvedBaseOutputPath = path.resolve(baseOutputPath);
-        if (!path.isAbsolute(resolvedBaseOutputPath)) {
+        if (!path.isAbsolute(baseOutputPath)) {
             throw new Error('Transcript output path must be absolute.');
         }
 
+        const resolvedBaseOutputPath = path.resolve(baseOutputPath);
         const transcriptDir = path.join(resolvedBaseOutputPath, TRANSCRIPT_DIRECTORY_NAME, randomUUID());
 
         if (!this.validateOutputPath(transcriptDir, resolvedBaseOutputPath)) {
@@ -671,10 +682,10 @@ export class YouTubeService {
         }
 
         const transcriptFiles = fs.readdirSync(sessionDir)
-            .filter(fileName => /\.(vtt|srt)$/i.test(fileName))
+            .filter(fileName => YouTubeService.TRANSCRIPT_FILE_EXTENSION_REGEX.test(fileName))
             .sort((left, right) => {
-                const leftEnglishScore = /\.en[\.-]/i.test(left) ? 1 : 0;
-                const rightEnglishScore = /\.en[\.-]/i.test(right) ? 1 : 0;
+                const leftEnglishScore = YouTubeService.ENGLISH_TRANSCRIPT_FILE_REGEX.test(left) ? 1 : 0;
+                const rightEnglishScore = YouTubeService.ENGLISH_TRANSCRIPT_FILE_REGEX.test(right) ? 1 : 0;
                 return rightEnglishScore - leftEnglishScore;
             });
 
@@ -692,12 +703,39 @@ export class YouTubeService {
             ? this.parseTimedTextBlocks(rawContent, false)
             : this.parseTimedTextBlocks(rawContent, true);
 
-        let transcript = '';
+        const mergedSegments: string[] = [];
         for (const block of blocks) {
-            transcript = this.mergeTranscriptSegments(transcript, block);
+            const normalizedBlock = block.trim();
+            if (!normalizedBlock) {
+                continue;
+            }
+
+            if (mergedSegments.length === 0) {
+                mergedSegments.push(normalizedBlock);
+                continue;
+            }
+
+            const lastSegmentIndex = mergedSegments.length - 1;
+            const lastSegment = mergedSegments[lastSegmentIndex];
+            if (lastSegment === normalizedBlock) {
+                continue;
+            }
+
+            const overlapSize = this.findTranscriptSegmentOverlap(lastSegment, normalizedBlock);
+            if (overlapSize > 0) {
+                const lastWords = this.splitTranscriptWords(lastSegment);
+                const nextWords = this.splitTranscriptWords(normalizedBlock);
+                mergedSegments[lastSegmentIndex] = lastWords
+                    .concat(nextWords.slice(overlapSize))
+                    .join(' ');
+                continue;
+            }
+
+            mergedSegments.push(normalizedBlock);
         }
 
-        return transcript
+        return mergedSegments
+            .join(' ')
             .replace(/\s+/g, ' ')
             .replace(/([.!?])\s+(?=[A-Z])/g, '$1\n\n')
             .trim();
@@ -765,48 +803,37 @@ export class YouTubeService {
         );
     }
 
-    private mergeTranscriptSegments(existingTranscript: string, nextSegment: string): string {
-        if (!existingTranscript) {
-            return nextSegment;
-        }
+    private splitTranscriptWords(segment: string): string[] {
+        return segment
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean);
+    }
 
-        if (!nextSegment || existingTranscript === nextSegment) {
-            return existingTranscript;
-        }
-
-        const existingWords = existingTranscript.split(/\s+/);
-        const nextWords = nextSegment.split(/\s+/);
+    private findTranscriptSegmentOverlap(previousSegment: string, nextSegment: string): number {
+        const previousWords = this.splitTranscriptWords(previousSegment);
+        const nextWords = this.splitTranscriptWords(nextSegment);
         const maxOverlap = Math.min(
-            existingWords.length,
+            previousWords.length,
             nextWords.length,
             YouTubeService.MAX_TRANSCRIPT_OVERLAP_WORDS
         );
 
         for (let overlap = maxOverlap; overlap > 0; overlap--) {
-            const existingTail = existingWords.slice(-overlap).join(' ').toLowerCase();
+            const previousTail = previousWords.slice(-overlap).join(' ').toLowerCase();
             const nextHead = nextWords.slice(0, overlap).join(' ').toLowerCase();
 
-            if (existingTail === nextHead) {
-                const remainder = nextWords.slice(overlap).join(' ');
-                return remainder ? `${existingTranscript} ${remainder}` : existingTranscript;
+            if (previousTail === nextHead) {
+                return overlap;
             }
         }
 
-        return `${existingTranscript} ${nextSegment}`.trim();
+        return 0;
     }
 
     private decodeHtmlEntities(text: string): string {
-        const entityMap: Record<string, string> = {
-            amp: '&',
-            lt: '<',
-            gt: '>',
-            quot: '"',
-            '#39': '\'',
-            nbsp: ' '
-        };
-
-        return text.replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (match, entity) => {
-            return entityMap[entity] ?? match;
+        return text.replace(YouTubeService.HTML_ENTITY_REGEX, (match, entity) => {
+            return YouTubeService.HTML_ENTITY_MAP[entity] ?? match;
         });
     }
 
@@ -841,8 +868,12 @@ export class YouTubeService {
     private validateOutputPath(filePath: string, baseDir: string): boolean {
         const resolvedPath = path.resolve(filePath);
         const resolvedBase = path.resolve(baseDir);
+        const relativePath = path.relative(resolvedBase, resolvedPath);
 
-        const isValid = resolvedPath.startsWith(resolvedBase);
+        const isValid = relativePath === '' || (
+            !relativePath.startsWith('..') &&
+            !path.isAbsolute(relativePath)
+        );
 
         if (!isValid) {
             console.error(`[YouTubeService] Path validation failed:`);
