@@ -297,7 +297,7 @@ export class YouTubeService {
                 '--skip-download',
                 '--write-subs',
                 '--write-auto-subs',
-                '--sub-langs', 'en.*,en',
+                '--sub-langs', 'en,en-orig',
                 '--sub-format', 'vtt',
                 '--no-playlist',
                 '--output', outputTemplate,
