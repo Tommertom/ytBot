@@ -1,6 +1,8 @@
 import { Bot, Context, InputFile, InlineKeyboard } from 'grammy';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { generateText } from 'ai';
 import { YouTubeService } from './youtube.service.js';
 import { TRANSCRIPT_DIRECTORY_NAME } from './youtube.types.js';
 import { ConfigService } from '../../services/config.service.js';
@@ -29,6 +31,7 @@ export class YouTubeBot {
         bot.command('start', AccessControlMiddleware.requireAccess, this.handleStart.bind(this));
         bot.command('help', AccessControlMiddleware.requireAccess, this.handleStart.bind(this)); // Wire help to start
         bot.command('text', AccessControlMiddleware.requireAccess, this.handleTranscriptCommand.bind(this));
+        bot.command('summary', AccessControlMiddleware.requireAccess, this.handleSummaryCommand.bind(this));
 
         // Register callback query handler for stop button
         bot.callbackQuery(/^stop_playlist:/, this.handleStopPlaylist.bind(this));
@@ -67,6 +70,7 @@ export class YouTubeBot {
                 '/start - Show this help message',
                 '/help - Show this help message',
                 '/text <youtube-url> - Download the English transcript as markdown',
+                '/summary <youtube-url> - Get an AI-generated summary of the transcript',
                 '/sonos - Select a Sonos device or send a YouTube URL',
                 '',
                 '📥 Single Videos:',
@@ -74,6 +78,7 @@ export class YouTubeBot {
                 '',
                 '📝 Transcripts:',
                 'Use /text <youtube-url> to get the English transcript as a markdown file.',
+                'Use /summary <youtube-url> to get an AI-generated summary of the transcript.',
                 '',
                 '🔊 Sonos Playback:',
                 'Use /sonos to select a device, then /sonos <youtube-url> to play.',
@@ -150,6 +155,66 @@ export class YouTubeBot {
                 await ctx.api.deleteMessage(ctx.chat!.id, statusMessage.message_id);
             } catch (error) {
                 console.error('Failed to delete transcript status message:', error);
+            }
+
+            if (transcriptFilePath) {
+                this.cleanupTranscriptSession(transcriptFilePath);
+            }
+        }
+    }
+
+    private async handleSummaryCommand(ctx: Context): Promise<void> {
+        if (!ctx.message?.text) {
+            await ctx.reply('Usage: /summary <youtube-url>');
+            return;
+        }
+
+        const args = this.extractCommandArguments(ctx.message.text, 'summary');
+        const youtubeUrls = this.youtubeService.extractYouTubeUrls(args);
+
+        if (youtubeUrls.length !== 1) {
+            await ctx.reply('Please provide exactly one YouTube video URL.\n\nUsage: /summary <youtube-url>');
+            return;
+        }
+
+        const url = youtubeUrls[0];
+        if (this.youtubeService.isPlaylistUrl(url)) {
+            await ctx.reply('❌ /summary supports single YouTube videos only, not playlists.');
+            return;
+        }
+
+        const statusMessage = await ctx.reply('📝 Downloading transcript and generating summary. Please wait...');
+        let transcriptFilePath: string | undefined;
+
+        try {
+            const transcriptResult = await this.youtubeService.downloadTranscript(url, {
+                outputPath: this.configService.getMediaTmpLocation()
+            });
+
+            if (!transcriptResult.success || !transcriptResult.filePath) {
+                await ctx.reply(`❌ Failed to download transcript.\n\nError: ${transcriptResult.error || 'Unknown error'}`);
+                return;
+            }
+
+            transcriptFilePath = transcriptResult.filePath;
+            await AccessControlMiddleware.notifyAdminOfDownload(ctx, url);
+
+            const transcriptContent = fs.readFileSync(transcriptFilePath, 'utf8');
+
+            const google = createGoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY });
+            const { text: summary } = await generateText({
+                model: google('gemini-2.0-flash'),
+                prompt: `Please summarise the following YouTube video transcript concisely:\n\n${transcriptContent}`
+            });
+
+            await ctx.reply(summary);
+        } catch (error) {
+            await ctx.reply(ErrorUtils.createErrorMessage('summarise transcript', error));
+        } finally {
+            try {
+                await ctx.api.deleteMessage(ctx.chat!.id, statusMessage.message_id);
+            } catch (error) {
+                console.error('Failed to delete summary status message:', error);
             }
 
             if (transcriptFilePath) {
