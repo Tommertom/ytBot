@@ -187,6 +187,12 @@ export class YouTubeBot {
         let transcriptFilePath: string | undefined;
 
         try {
+            const geminiApiKey = process.env.GEMINI_API_KEY;
+            if (!geminiApiKey) {
+                await ctx.reply('❌ GEMINI_API_KEY is not configured. Please set it in the environment.');
+                return;
+            }
+
             const transcriptResult = await this.youtubeService.downloadTranscript(url, {
                 outputPath: this.configService.getMediaTmpLocation()
             });
@@ -201,15 +207,22 @@ export class YouTubeBot {
 
             const transcriptContent = fs.readFileSync(transcriptFilePath, 'utf8');
 
-            const google = createGoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY });
+            const google = createGoogleGenerativeAI({ apiKey: geminiApiKey });
             const { text: summary } = await generateText({
                 model: google('gemini-2.0-flash'),
-                prompt: `Please summarise the following YouTube video transcript concisely:\n\n${transcriptContent}`
+                prompt: `Please summarize the following YouTube video transcript concisely:\n\n${transcriptContent}`
             });
 
-            await ctx.reply(summary);
+            const maxLength = 4096;
+            if (summary.length <= maxLength) {
+                await ctx.reply(summary);
+            } else {
+                for (let i = 0; i < summary.length; i += maxLength) {
+                    await ctx.reply(summary.slice(i, i + maxLength));
+                }
+            }
         } catch (error) {
-            await ctx.reply(ErrorUtils.createErrorMessage('summarise transcript', error));
+            await ctx.reply(ErrorUtils.createErrorMessage('summarize transcript', error));
         } finally {
             try {
                 await ctx.api.deleteMessage(ctx.chat!.id, statusMessage.message_id);
