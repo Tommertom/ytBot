@@ -213,14 +213,14 @@ export class YouTubeBot {
                 prompt: `Please summarize the following YouTube video transcript concisely:\n\n${transcriptContent}`
             });
 
-            const maxLength = 4096;
-            if (summary.length <= maxLength) {
-                await ctx.reply(summary);
-            } else {
-                for (let i = 0; i < summary.length; i += maxLength) {
-                    await ctx.reply(summary.slice(i, i + maxLength));
-                }
-            }
+            const title = transcriptResult.title || 'summary';
+            const summaryFileName = `${title.replace(/[^a-z0-9_\-\s]/gi, '_').trim()}-summary.md`;
+            const summaryFilePath = path.join(path.dirname(transcriptFilePath), summaryFileName);
+            fs.writeFileSync(summaryFilePath, summary, 'utf8');
+
+            await ctx.replyWithDocument(new InputFile(summaryFilePath), {
+                caption: `📝 ${transcriptResult.title || 'Summary'}`
+            });
         } catch (error) {
             await ctx.reply(ErrorUtils.createErrorMessage('summarize transcript', error));
         } finally {
