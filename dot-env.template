@@ -38,3 +38,6 @@ SONOS_MEDIA_PORT=8787
 
 # Python executable used to run SoCo helper scripts (default: python3)
 SONOS_PYTHON_PATH=python3
+
+# Gemini API key for AI-powered /summary command
+GEMINI_API_KEY=
