@@ -224,7 +224,7 @@ ${transcriptContent}`;
                 prompt: summarizationPrompt
             });
 
-            const summaryWithSourceUrl = `${summary.trimEnd()}\n\n## Downloaded YouTube URL\n${url}\n`;
+            const summaryWithSourceUrl = `${summary.trimEnd()}\n\n## Source URL\n${url}\n`;
 
             const sanitizedTitle = (transcriptResult.title || '').replace(/[^a-z0-9_\-\s]/gi, '_').trim() || 'summary';
             const summaryFileName = `${sanitizedTitle}-summary.md`;
