@@ -22,6 +22,9 @@ export class ConfigService {
     private readonly maxPlaylistSize: number;
     private readonly playlistDownloadDelay: number;
 
+    // Gemini Configuration
+    private readonly geminiApiKey: string | undefined;
+
     // Sonos Configuration
     private readonly sonosMediaHost: string | undefined;
     private readonly sonosMediaPort: number;
@@ -79,6 +82,10 @@ export class ConfigService {
 
         this.sonosPythonPath = process.env.SONOS_PYTHON_PATH || 'python3';
 
+        // Load Gemini configuration
+        const geminiKey = process.env.GEMINI_API_KEY || '';
+        this.geminiApiKey = geminiKey.trim().length > 0 ? geminiKey.trim() : undefined;
+
         // Load system environment
         this.homeDirectory = process.env.HOME || '/tmp';
         this.systemEnv = process.env as { [key: string]: string };
@@ -135,6 +142,11 @@ export class ConfigService {
 
     getSonosPythonPath(): string {
         return this.sonosPythonPath;
+    }
+
+    // Gemini Configuration Getters
+    getGeminiApiKey(): string | undefined {
+        return this.geminiApiKey;
     }
 
     // System Environment Getters
