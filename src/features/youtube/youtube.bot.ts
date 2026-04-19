@@ -224,10 +224,12 @@ ${transcriptContent}`;
                 prompt: summarizationPrompt
             });
 
+            const summaryWithSourceUrl = `${summary.trimEnd()}\n\n## Source URL\n${url}\n`;
+
             const sanitizedTitle = (transcriptResult.title || '').replace(/[^a-z0-9_\-\s]/gi, '_').trim() || 'summary';
             const summaryFileName = `${sanitizedTitle}-summary.md`;
             const summaryFilePath = path.join(path.dirname(transcriptFilePath), summaryFileName);
-            await fs.promises.writeFile(summaryFilePath, summary, 'utf8');
+            await fs.promises.writeFile(summaryFilePath, summaryWithSourceUrl, 'utf8');
 
             const caption = truncated
                 ? `📝 ${transcriptResult.title || 'Summary'} _(transcript was truncated to ${MAX_TRANSCRIPT_CHARS} chars)_`
