@@ -300,10 +300,10 @@ ${transcriptContent}`;
 
         await ctx.answerCallbackQuery({ text: '🎵 Starting MP3 download...' });
 
-        // Remove the keyboard from the prompt message
+        // Delete the prompt message entirely
         try {
-            await ctx.editMessageReplyMarkup({ reply_markup: undefined });
-        } catch (_) { /* ignore if edit fails */ }
+            await ctx.deleteMessage();
+        } catch (_) { /* ignore if delete fails */ }
 
         if (this.youtubeService.isPlaylistUrl(url)) {
             await this.handlePlaylistDownload(ctx, url);
@@ -331,10 +331,10 @@ ${transcriptContent}`;
 
         await ctx.answerCallbackQuery({ text: '📝 Downloading transcript...' });
 
-        // Remove the keyboard from the prompt message
+        // Delete the prompt message entirely
         try {
-            await ctx.editMessageReplyMarkup({ reply_markup: undefined });
-        } catch (_) { /* ignore if edit fails */ }
+            await ctx.deleteMessage();
+        } catch (_) { /* ignore if delete fails */ }
 
         await this.executeTranscriptDownload(ctx, url);
     }
@@ -358,10 +358,10 @@ ${transcriptContent}`;
 
         await ctx.answerCallbackQuery({ text: '📋 Generating summary...' });
 
-        // Remove the keyboard from the prompt message
+        // Delete the prompt message entirely
         try {
-            await ctx.editMessageReplyMarkup({ reply_markup: undefined });
-        } catch (_) { /* ignore if edit fails */ }
+            await ctx.deleteMessage();
+        } catch (_) { /* ignore if delete fails */ }
 
         await this.executeSummaryGeneration(ctx, url);
     }
