@@ -15,6 +15,8 @@ export class YouTubeBot {
     private configService: ConfigService;
     private activePlaylistDownloads: Map<string, { cancelled: boolean }> = new Map();
     private readonly commandPatterns: Map<string, RegExp> = new Map();
+    private pendingUrlActions: Map<string, { url: string; timestamp: number }> = new Map();
+    private readonly PENDING_ACTION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
     constructor(
         botId: string,
@@ -35,6 +37,11 @@ export class YouTubeBot {
 
         // Register callback query handler for stop button
         bot.callbackQuery(/^stop_playlist:/, this.handleStopPlaylist.bind(this));
+
+        // Register callback query handlers for YouTube action buttons
+        bot.callbackQuery(/^yt_mp3:/, this.handleYouTubeActionMp3.bind(this));
+        bot.callbackQuery(/^yt_text:/, this.handleYouTubeActionText.bind(this));
+        bot.callbackQuery(/^yt_summary:/, this.handleYouTubeActionSummary.bind(this));
 
         // Register message handler for YouTube links
         bot.on('message:text', AccessControlMiddleware.requireAccess, async (ctx, next) => {
@@ -129,6 +136,10 @@ export class YouTubeBot {
             return;
         }
 
+        await this.executeTranscriptDownload(ctx, url);
+    }
+
+    private async executeTranscriptDownload(ctx: Context, url: string): Promise<void> {
         const statusMessage = await ctx.reply('📝 Downloading the English transcript. Please wait...');
         let transcriptFilePath: string | undefined;
 
@@ -183,6 +194,10 @@ export class YouTubeBot {
             return;
         }
 
+        await this.executeSummaryGeneration(ctx, url);
+    }
+
+    private async executeSummaryGeneration(ctx: Context, url: string): Promise<void> {
         const statusMessage = await ctx.reply('📝 Downloading transcript and generating summary. Please wait...');
         let transcriptFilePath: string | undefined;
 
@@ -251,6 +266,106 @@ ${transcriptContent}`;
         }
     }
 
+    private storePendingUrl(url: string): string {
+        // Clean up expired entries
+        const now = Date.now();
+        for (const [key, value] of this.pendingUrlActions.entries()) {
+            if (now - value.timestamp > this.PENDING_ACTION_TTL_MS) {
+                this.pendingUrlActions.delete(key);
+            }
+        }
+
+        // Generate a short random ID (8 alphanumeric chars, well within 64-byte callback_data limit)
+        const id = Math.random().toString(36).slice(2, 10);
+        this.pendingUrlActions.set(id, { url, timestamp: now });
+        return id;
+    }
+
+    private getPendingUrl(id: string): string | null {
+        const entry = this.pendingUrlActions.get(id);
+        return entry ? entry.url : null;
+    }
+
+    private async handleYouTubeActionMp3(ctx: Context): Promise<void> {
+        const data = ctx.callbackQuery?.data;
+        if (!data) return;
+
+        const id = data.replace('yt_mp3:', '');
+        const url = this.getPendingUrl(id);
+
+        if (!url) {
+            await ctx.answerCallbackQuery({ text: '⚠️ This action has expired. Please send the link again.' });
+            return;
+        }
+
+        await ctx.answerCallbackQuery({ text: '🎵 Starting MP3 download...' });
+
+        // Remove the keyboard from the prompt message
+        try {
+            await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+        } catch (_) { /* ignore if edit fails */ }
+
+        if (this.youtubeService.isPlaylistUrl(url)) {
+            await this.handlePlaylistDownload(ctx, url);
+        } else {
+            await this.handleSingleVideoDownload(ctx, url);
+        }
+    }
+
+    private async handleYouTubeActionText(ctx: Context): Promise<void> {
+        const data = ctx.callbackQuery?.data;
+        if (!data) return;
+
+        const id = data.replace('yt_text:', '');
+        const url = this.getPendingUrl(id);
+
+        if (!url) {
+            await ctx.answerCallbackQuery({ text: '⚠️ This action has expired. Please send the link again.' });
+            return;
+        }
+
+        if (this.youtubeService.isPlaylistUrl(url)) {
+            await ctx.answerCallbackQuery({ text: '❌ Transcript is not supported for playlists.' });
+            return;
+        }
+
+        await ctx.answerCallbackQuery({ text: '📝 Downloading transcript...' });
+
+        // Remove the keyboard from the prompt message
+        try {
+            await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+        } catch (_) { /* ignore if edit fails */ }
+
+        await this.executeTranscriptDownload(ctx, url);
+    }
+
+    private async handleYouTubeActionSummary(ctx: Context): Promise<void> {
+        const data = ctx.callbackQuery?.data;
+        if (!data) return;
+
+        const id = data.replace('yt_summary:', '');
+        const url = this.getPendingUrl(id);
+
+        if (!url) {
+            await ctx.answerCallbackQuery({ text: '⚠️ This action has expired. Please send the link again.' });
+            return;
+        }
+
+        if (this.youtubeService.isPlaylistUrl(url)) {
+            await ctx.answerCallbackQuery({ text: '❌ Summary is not supported for playlists.' });
+            return;
+        }
+
+        await ctx.answerCallbackQuery({ text: '📋 Generating summary...' });
+
+        // Remove the keyboard from the prompt message
+        try {
+            await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+        } catch (_) { /* ignore if edit fails */ }
+
+        await this.executeSummaryGeneration(ctx, url);
+    }
+
     private async handleTextMessage(ctx: Context): Promise<boolean> {
         if (!ctx.message?.text) return false;
 
@@ -265,26 +380,28 @@ ${transcriptContent}`;
                 return false;
             }
 
-            const confirmationMessage = await ctx.reply(
-                `✅ YouTube link${youtubeUrls.length > 1 ? 's' : ''} detected! Processing ${youtubeUrls.length} video${youtubeUrls.length > 1 ? 's' : ''}...`
-            );
-
-            const deleteTimeout = this.configService.getMessageDeleteTimeout();
-            if (deleteTimeout > 0 && confirmationMessage) {
-                await MessageUtils.scheduleMessageDeletion(
-                    ctx,
-                    confirmationMessage.message_id,
-                    deleteTimeout
-                );
-                console.log(`[YouTubeBot] Scheduled message deletion in ${deleteTimeout}ms`);
-            }
-
             for (const url of youtubeUrls) {
-                if (this.youtubeService.isPlaylistUrl(url)) {
-                    await this.handlePlaylistDownload(ctx, url);
-                } else {
-                    await this.handleSingleVideoDownload(ctx, url);
-                }
+                const id = this.storePendingUrl(url);
+                const isPlaylist = this.youtubeService.isPlaylistUrl(url);
+
+                const keyboard = new InlineKeyboard()
+                    .text('🎵 Download MP3', `yt_mp3:${id}`)
+                    .text('📝 Transcript', `yt_text:${id}`)
+                    .text('📋 Summary', `yt_summary:${id}`);
+
+                const label = isPlaylist
+                    ? '📋 YouTube playlist detected'
+                    : '🔗 YouTube link detected';
+
+                const note = isPlaylist
+                    ? '_Note: Transcript and Summary are only available for single videos._'
+                    : '';
+
+                const promptText = [label, '', 'What would you like to do with this?', note]
+                    .filter(Boolean)
+                    .join('\n');
+
+                await ctx.reply(promptText, { reply_markup: keyboard });
             }
 
             return true;
