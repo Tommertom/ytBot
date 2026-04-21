@@ -385,7 +385,7 @@ ${transcriptContent}`;
                 const isPlaylist = this.youtubeService.isPlaylistUrl(url);
 
                 const keyboard = new InlineKeyboard()
-                    .text('🎵 Download MP3', `yt_mp3:${id}`)
+                    .text('🎵 MP3', `yt_mp3:${id}`)
                     .text('📝 Transcript', `yt_text:${id}`)
                     .text('📋 Summary', `yt_summary:${id}`);
 
