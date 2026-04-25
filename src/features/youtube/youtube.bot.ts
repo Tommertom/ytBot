@@ -247,8 +247,8 @@ ${transcriptContent}`;
             await fs.promises.writeFile(summaryFilePath, summaryWithSourceUrl, 'utf8');
 
             const caption = truncated
-                ? `📝 ${transcriptResult.title || 'Summary'} _(transcript was truncated to ${MAX_TRANSCRIPT_CHARS} chars)_`
-                : `📝 ${transcriptResult.title || 'Summary'}`;
+                ? `📝 ${transcriptResult.title || 'Summary'} _(transcript was truncated to ${MAX_TRANSCRIPT_CHARS} chars)_\n\n${url}`
+                : `📝 ${transcriptResult.title || 'Summary'}\n\n${url}`;
 
             await ctx.replyWithDocument(new InputFile(summaryFilePath), { caption });
         } catch (error) {
