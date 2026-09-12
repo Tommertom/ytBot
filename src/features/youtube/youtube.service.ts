@@ -67,7 +67,7 @@ export class YouTubeService {
         }
 
         // Validate YouTube domain (including playlists)
-        const youtubeRegex = /^https?:\/\/(www\.)?(youtube\.com\/(watch\?v=|shorts\/|playlist\?list=)|youtu\.be\/)/i;
+        const youtubeRegex = /^https?:\/\/(www\.)?(youtube\.com\/(watch\?v=|shorts\/|playlist\?list=|live\/)|youtu\.be\/)/i;
         return youtubeRegex.test(url);
     }
 
@@ -75,7 +75,7 @@ export class YouTubeService {
      * Extract YouTube URLs from text
      */
     extractYouTubeUrls(text: string): string[] {
-        const urlRegex = /(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/|playlist\?list=)|youtu\.be\/)[^\s]+/gi;
+        const urlRegex = /(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/|playlist\?list=|live\/)|youtu\.be\/)[^\s]+/gi;
         const matches = text.match(urlRegex);
         return matches ? matches.filter(url => this.isYouTubeUrl(url)) : [];
     }
@@ -115,6 +115,7 @@ export class YouTubeService {
             const args = [
                 '--dump-json',
                 '--flat-playlist',
+                '--extractor-args', 'youtube:player_client=android',
                 '--',
                 url
             ];
@@ -171,6 +172,7 @@ export class YouTubeService {
             const args = [
                 '--dump-json',
                 '--no-playlist',
+                '--extractor-args', 'youtube:player_client=android',
                 '--', // Security: Argument separator
                 url
             ];
@@ -299,6 +301,7 @@ export class YouTubeService {
                 '--write-auto-subs',
                 '--sub-langs', 'en,en-orig',
                 '--sub-format', 'vtt',
+                '--extractor-args', 'youtube:player_client=android',
                 '--no-playlist',
                 '--output', outputTemplate,
                 '--no-warnings',
@@ -368,6 +371,7 @@ export class YouTubeService {
             '--parse-metadata', 'title:%(album_artist)s', // Set ID3 album artist from video title (Sonos display)
             '--embed-thumbnail', // Embed thumbnail as album art
             '--convert-thumbnails', 'jpg', // Ensure compatible thumbnail format
+            '--extractor-args', 'youtube:player_client=android', // Use Android client to avoid 403 errors
             '--no-playlist',
             '--output', outputTemplate,
             '--print', 'after_move:filepath', // Print final file path
