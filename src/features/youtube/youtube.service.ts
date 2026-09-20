@@ -67,7 +67,7 @@ export class YouTubeService {
         }
 
         // Validate YouTube domain (including playlists)
-        const youtubeRegex = /^https?:\/\/(www\.)?(youtube\.com\/(watch\?v=|shorts\/|playlist\?list=|live\/)|youtu\.be\/)/i;
+        const youtubeRegex = /^https?:\/\/(www\.)?(youtube\.com\/(watch\?v=|shorts\/|playlist\?list=|live\/|post\/)|youtu\.be\/)/i;
         return youtubeRegex.test(url);
     }
 
@@ -75,7 +75,7 @@ export class YouTubeService {
      * Extract YouTube URLs from text
      */
     extractYouTubeUrls(text: string): string[] {
-        const urlRegex = /(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/|playlist\?list=|live\/)|youtu\.be\/)[^\s]+/gi;
+        const urlRegex = /(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/|playlist\?list=|live\/|post\/)|youtu\.be\/)[^\s]+/gi;
         const matches = text.match(urlRegex);
         return matches ? matches.filter(url => this.isYouTubeUrl(url)) : [];
     }
