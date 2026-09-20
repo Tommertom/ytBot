@@ -383,16 +383,6 @@ ${transcriptContent}`;
             for (const url of youtubeUrls) {
                 const id = this.storePendingUrl(url);
                 const isPlaylist = this.youtubeService.isPlaylistUrl(url);
-                const isPost = this.youtubeService.isPostUrl(url);
-
-                if (isPost) {
-                    await ctx.reply(
-                        '📌 YouTube community post detected.\n\n' +
-                        'Posts don\'t contain downloadable audio or transcripts. ' +
-                        'Please send a video URL (watch, shorts, live) to use the bot.'
-                    );
-                    continue;
-                }
 
                 const keyboard = new InlineKeyboard()
                     .text('🎵 MP3', `yt_mp3:${id}`)

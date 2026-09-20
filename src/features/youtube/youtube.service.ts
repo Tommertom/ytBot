@@ -100,21 +100,6 @@ export class YouTubeService {
     }
 
     /**
-     * Check if a URL is a YouTube community post (no video content)
-     */
-    isPostUrl(url: string): boolean {
-        if (url.length > YouTubeService.MAX_URL_LENGTH) {
-            return false;
-        }
-
-        if (!/^https?:\/\//i.test(url)) {
-            return false;
-        }
-
-        return /^https?:\/\/(www\.)?youtube\.com\/post\//i.test(url);
-    }
-
-    /**
      * Extract playlist ID from URL
      */
     extractPlaylistId(url: string): string | null {
